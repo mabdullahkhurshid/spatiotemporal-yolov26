@@ -1,0 +1,108 @@
+const { body, validationResult } = require("express-validator");
+
+// Validation result handler
+exports.validate = (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      success: false,
+      message: "Validation error",
+      errors: errors.array(),
+    });
+  }
+  console.log("Validation passed for:", req.path);
+  next();
+};
+
+// User registration validation
+exports.validateRegister = [
+  body("name")
+    .trim()
+    .notEmpty()
+    .withMessage("Name is required")
+    .isLength({ min: 2 })
+    .withMessage("Name must be at least 2 characters"),
+  body("email")
+    .isEmail()
+    .normalizeEmail()
+    .withMessage("Please provide a valid email"),
+  body("password")
+    .isLength({ min: 6 })
+    .withMessage("Password must be at least 6 characters"),
+  body("organization").optional().trim(),
+];
+
+// User login validation
+exports.validateLogin = [
+  body("email")
+    .isEmail()
+    .normalizeEmail()
+    .withMessage("Please provide a valid email"),
+  body("password").notEmpty().withMessage("Password is required"),
+];
+
+// Forgot password validation
+exports.validateForgotPassword = [
+  body("email")
+    .isEmail()
+    .normalizeEmail()
+    .withMessage("Please provide a valid email"),
+];
+
+// Reset password validation
+exports.validateResetPassword = [
+  body("token").notEmpty().withMessage("Reset token is required"),
+  body("password")
+    .isLength({ min: 6 })
+    .withMessage("Password must be at least 6 characters"),
+];
+
+// Camera validation (name or label required for backward compatibility)
+exports.validateCamera = [
+  body("name").optional().trim(),
+  body("label").optional().trim(),
+  body("ipAddress")
+    .matches(
+      /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/,
+    )
+    .withMessage("Please provide a valid IP address"),
+  body("location").trim().notEmpty().withMessage("Camera location is required"),
+  (req, res, next) => {
+    if (!req.body.name && !req.body.label) {
+      return res.status(400).json({
+        success: false,
+        message: "Validation error",
+        errors: [{ msg: "Camera name or label is required", path: "name" }],
+      });
+    }
+    next();
+  },
+];
+
+// Organization validation
+exports.validateOrganization = [
+  body("name").trim().notEmpty().withMessage("Organization name is required"),
+  body("email")
+    .isEmail()
+    .normalizeEmail()
+    .withMessage("Please provide a valid email"),
+  body("address.street").optional().trim(),
+  body("address.city").optional().trim(),
+  body("address.state").optional().trim(),
+  body("address.zipCode").optional().trim(),
+  body("address.country").optional().trim(),
+];
+
+// Alert validation
+exports.validateAlert = [
+  body("cameraId").isMongoId().withMessage("Valid camera ID is required"),
+  body("fireConfidence")
+    .isFloat({ min: 0, max: 100 })
+    .withMessage("Fire confidence must be between 0 and 100"),
+  body("smokeConfidence")
+    .isFloat({ min: 0, max: 100 })
+    .withMessage("Smoke confidence must be between 0 and 100"),
+  body("intensityLevel")
+    .isIn(["low", "medium", "high", "critical"])
+    .withMessage("Invalid intensity level"),
+];
