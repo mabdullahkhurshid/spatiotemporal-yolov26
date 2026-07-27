@@ -1,0 +1,53 @@
+---
+description: Mandatory repository safety and incremental implementation rules
+alwaysApply: true
+---
+
+Before performing any task:
+
+1. Read:
+   - PROJECT_IMPLEMENTATION_AUDIT.md
+   - PROJECT_AUDIT_SUMMARY.md
+   - docs/IMPLEMENTATION_MASTER_PLAN.md
+   - docs/CURRENT_ITERATION.md
+   - docs/ARCHITECTURE_DECISIONS.md
+   - docs/REGRESSION_CHECKLIST.md
+
+2. Work only on the current iteration and current step.
+
+3. Do not implement future iteration functionality.
+
+4. Do not rewrite or broadly refactor working modules.
+
+5. Do not rename or remove existing API endpoints, roles, routes, schema fields,
+   environment variables, or Redux state without explicit authorization.
+
+6. Preserve:
+   - Authentication
+   - JWT refresh
+   - Email verification
+   - Google OAuth
+   - RBAC
+   - Multi-tenant isolation
+   - Cameras
+   - AI detection
+   - Alerts
+   - Socket.io
+   - Subscription plan management
+   - Landing page
+   - Contact form
+
+7. Modify only files required by the approved step.
+
+8. Do not run database migrations unless the prompt explicitly authorizes --apply.
+
+9. Do not install or upgrade dependencies unless explicitly required.
+
+10. Do not hide errors, swallow exceptions, or claim that tests passed when they
+    were not executed.
+
+11. After completing one step:
+    - Run focused validation
+    - Update docs/CURRENT_ITERATION.md
+    - Produce a change report
+    - Stop and wait for the next instruction

@@ -11,6 +11,7 @@ const {
   resetPassword,
   refreshToken,
   googleCallback,
+  setPassword,
 } = require('../controllers/authController');
 const { protect } = require('../middleware/auth');
 const {
@@ -18,6 +19,7 @@ const {
   validateLogin,
   validateForgotPassword,
   validateResetPassword,
+  validateSetPassword,
   validate,
 } = require('../middleware/validation');
 
@@ -35,6 +37,7 @@ router.get('/google/callback', passport.authenticate('google', { session: false 
 
 // Protected routes
 router.get('/me', protect, getMe);
+router.post('/set-password', protect, validateSetPassword, validate, setPassword);
 router.post('/logout', protect, logout);
 
 module.exports = router;

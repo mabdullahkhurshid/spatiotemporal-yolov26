@@ -1,8 +1,147 @@
 const User = require('../models/User');
 const Organization = require('../models/Organization');
+const Subscription = require('../models/Subscription');
+const Order = require('../models/Order');
 const OperatorCameraAssignment = require('../models/OperatorCameraAssignment');
 const Notification = require('../models/Notification');
 const AuditLog = require('../models/AuditLog');
+const { sendOperatorWelcomeEmail } = require('../services/emailService');
+
+// @desc    Portal account summary (user + org + subscription)
+// @route   GET /api/users/me/account-summary
+// @access  Private (customer, org_admin)
+exports.getAccountSummary = async (req, res, next) => {
+  try {
+    const user = req.user;
+
+    if (user.role !== 'customer' && user.role !== 'org_admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized',
+      });
+    }
+
+    const summary = {
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        phone: user.phone,
+        avatar: user.avatar,
+        organizationId: user.organizationId,
+      },
+      organization: null,
+      subscription: null,
+      orders: [],
+      usage: null,
+      flags: {
+        hasOrganization: false,
+        hasActiveSubscription: false,
+        isOrgSuspended: false,
+        isSubscriptionExpired: false,
+      },
+    };
+
+    if (!user.organizationId) {
+      return res.status(200).json({
+        success: true,
+        data: summary,
+      });
+    }
+
+    const organization = await Organization.findById(user.organizationId).populate('subscriptionPlanId');
+
+    if (!organization || organization.isDeleted) {
+      return res.status(200).json({
+        success: true,
+        data: summary,
+      });
+    }
+
+    const now = new Date();
+    if (
+      organization.subscriptionEndDate &&
+      organization.subscriptionEndDate < now &&
+      organization.subscriptionStatus === 'active'
+    ) {
+      organization.subscriptionStatus = 'expired';
+      await organization.save();
+    }
+
+    let subscription = await Subscription.findOne({ organizationId: user.organizationId }).populate('planId');
+
+    if (subscription && subscription.endDate < now && subscription.status === 'active') {
+      subscription.status = 'expired';
+      await subscription.save();
+    }
+
+    const orders = await Order.find({ organizationId: user.organizationId })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const plan = subscription?.planId || organization.subscriptionPlanId;
+    const isOrgSuspended = organization.status === 'SUSPENDED';
+    const isSubscriptionExpired =
+      subscription?.status === 'expired' ||
+      organization.subscriptionStatus === 'expired' ||
+      (subscription?.endDate && new Date(subscription.endDate) < now);
+
+    const hasActiveSubscription =
+      !isOrgSuspended &&
+      !isSubscriptionExpired &&
+      organization.status === 'ACTIVE' &&
+      (subscription?.status === 'active' || organization.subscriptionStatus === 'active');
+
+    summary.organization = {
+      id: organization._id,
+      name: organization.name,
+      email: organization.email,
+      phone: organization.phone,
+      status: organization.status,
+      subscriptionStatus: organization.subscriptionStatus,
+      subscriptionStartDate: organization.subscriptionStartDate,
+      subscriptionEndDate: organization.subscriptionEndDate,
+      maxCameras: organization.maxCameras,
+      maxOperators: organization.maxOperators,
+    };
+
+    summary.subscription = subscription
+      ? {
+          id: subscription._id,
+          plan: subscription.plan,
+          planDetails: plan,
+          status: subscription.status,
+          startDate: subscription.startDate,
+          endDate: subscription.endDate,
+          price: subscription.price,
+          billingCycle: subscription.billingCycle,
+        }
+      : null;
+
+    summary.orders = orders;
+    summary.usage = {
+      camerasUsed: subscription?.camerasUsed ?? 0,
+      operatorsUsed: subscription?.operatorsUsed ?? 0,
+      maxCameras: organization.maxCameras ?? plan?.maxCameras ?? 0,
+      maxOperators: organization.maxOperators ?? plan?.maxOperators ?? 0,
+    };
+
+    summary.flags = {
+      hasOrganization: true,
+      hasActiveSubscription,
+      isOrgSuspended,
+      isSubscriptionExpired,
+    };
+
+    res.status(200).json({
+      success: true,
+      data: summary,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
 // @desc    Get all users
 // @route   GET /api/users
@@ -52,15 +191,7 @@ exports.getUser = async (req, res, next) => {
       });
     }
 
-    // Unverified org_admin/operator can only view own profile
-    if ((req.user.role === 'org_admin' || req.user.role === 'operator') && !req.user.isVerified) {
-      if (req.params.id !== req.user._id.toString()) {
-        return res.status(403).json({
-          success: false,
-          message: 'Account pending verification. You can only view your own profile.',
-        });
-      }
-    } else if (req.user.role === 'org_admin' && user.organizationId?.toString() !== req.user.organizationId?.toString()) {
+    if (req.user.role === 'org_admin' && user.organizationId?.toString() !== req.user.organizationId?.toString()) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized',
@@ -69,6 +200,11 @@ exports.getUser = async (req, res, next) => {
       return res.status(403).json({
         success: false,
         message: 'Operators can only view their own profile',
+      });
+    } else if (req.user.role === 'customer' && req.params.id !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized',
       });
     }
 
@@ -88,6 +224,13 @@ exports.createUser = async (req, res, next) => {
   try {
     const { name, email, password, role, organizationId } = req.body;
 
+    if (!name || !email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Name, email and password are required',
+      });
+    }
+
     // Check if user exists
     const existingUser = await User.findOne({ email, isDeleted: false });
     if (existingUser) {
@@ -99,7 +242,8 @@ exports.createUser = async (req, res, next) => {
 
     // Org admin can only create operators in their org
     if (req.user.role === 'org_admin') {
-      if (role !== 'operator' || organizationId !== req.user.organizationId.toString()) {
+      const targetOrgId = organizationId || req.user.organizationId?.toString();
+      if (role !== 'operator' || targetOrgId !== req.user.organizationId?.toString()) {
         return res.status(403).json({
           success: false,
           message: 'Not authorized to create this user',
@@ -131,14 +275,25 @@ exports.createUser = async (req, res, next) => {
       }
     }
 
+    const plainPassword = password;
     const user = await User.create({
       name,
       email,
       password,
       role: role || 'operator',
       organizationId: organizationId || req.user.organizationId,
-      isVerified: req.user.role === 'super_admin', // Super Admin-created users are pre-approved
+      isVerified: true,
+      isEmailVerified: true,
     });
+
+    if (user.role === 'operator') {
+      try {
+        const loginUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/login`;
+        await sendOperatorWelcomeEmail(user, plainPassword, loginUrl);
+      } catch (emailError) {
+        console.error('Operator welcome email error:', emailError);
+      }
+    }
 
     res.status(201).json({
       success: true,
@@ -154,7 +309,9 @@ exports.createUser = async (req, res, next) => {
 // @access  Private
 exports.updateUser = async (req, res, next) => {
   try {
-    let user = await User.findById(req.params.id);
+    const { name, role, isActive, phone, avatar, password } = req.body;
+    const needsPassword = password !== undefined && password !== '';
+    let user = await User.findById(req.params.id).select(needsPassword ? '+password' : '');
 
     if (!user || user.isDeleted) {
       return res.status(404).json({
@@ -163,31 +320,31 @@ exports.updateUser = async (req, res, next) => {
       });
     }
 
-    // Unverified org_admin/operator can only update own profile (limited: name only)
-    if ((req.user.role === 'org_admin' || req.user.role === 'operator') && !req.user.isVerified) {
-      if (req.params.id !== req.user._id.toString()) {
+    // Check access
+    if (req.user.role === 'org_admin') {
+      if (user.organizationId?.toString() !== req.user.organizationId?.toString()) {
         return res.status(403).json({
           success: false,
-          message: 'Account pending verification. You can only update your own profile.',
+          message: 'Not authorized',
         });
       }
-      const { name } = req.body;
-      if (name) user.name = name;
-      await user.save();
-      return res.status(200).json({ success: true, data: user });
-    }
-
-    // Check access
-    if (req.user.role === 'org_admin' && user.organizationId?.toString() !== req.user.organizationId?.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized',
-      });
+      if (user.role !== 'operator') {
+        return res.status(403).json({
+          success: false,
+          message: 'Org Admin can only update operators',
+        });
+      }
     }
     if (req.user.role === 'operator' && req.params.id !== req.user._id.toString()) {
       return res.status(403).json({
         success: false,
         message: 'Operators can only update their own profile',
+      });
+    }
+    if (req.user.role === 'customer' && req.params.id !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized',
       });
     }
 
@@ -200,10 +357,21 @@ exports.updateUser = async (req, res, next) => {
     }
 
     // Update fields
-    const { name, role, isActive } = req.body;
-    if (name) user.name = name;
+    if (name !== undefined) user.name = name;
+    if (phone !== undefined) user.phone = phone;
+    if (avatar !== undefined) user.avatar = avatar || null;
     if (role && req.user.role === 'super_admin') user.role = role;
     if (isActive !== undefined && req.user.role !== 'operator') user.isActive = isActive;
+    if (needsPassword) {
+      if (req.user.role === 'super_admin' || (req.user.role === 'org_admin' && user.role === 'operator') || req.params.id === req.user._id.toString()) {
+        user.password = password;
+      } else {
+        return res.status(403).json({
+          success: false,
+          message: 'Not authorized to change password',
+        });
+      }
+    }
 
     await user.save();
 
@@ -216,7 +384,7 @@ exports.updateUser = async (req, res, next) => {
   }
 };
 
-// @desc    Delete user. Super Admin deleting Operator = hard delete; otherwise soft delete.
+// @desc    Delete user. Super Admin = hard delete; Org Admin deleting operator = hard delete; otherwise soft delete.
 // @route   DELETE /api/users/:id
 // @access  Private (Super Admin, Org Admin)
 exports.deleteUser = async (req, res, next) => {
@@ -244,14 +412,29 @@ exports.deleteUser = async (req, res, next) => {
       });
     }
 
-    // Super Admin deleting Operator: permanent (hard) delete so email can be reused and login is blocked immediately
-    if (req.user.role === 'super_admin' && user.role === 'operator') {
+    const isSuperAdminDelete = req.user.role === 'super_admin';
+    const isOrgAdminDeletingOwnOperator =
+      user.role === 'operator' &&
+      req.user.role === 'org_admin' &&
+      user.organizationId?.toString() === req.user.organizationId?.toString();
+
+    if (isSuperAdminDelete || isOrgAdminDeletingOwnOperator) {
       const deletedUserId = user._id;
       const deletedUserEmail = user.email;
       const deletedUserName = user.name;
 
-      await OperatorCameraAssignment.deleteMany({ operatorId: deletedUserId });
+      if (user.role === 'operator') {
+        await OperatorCameraAssignment.deleteMany({ operatorId: deletedUserId });
+      }
+
       await Notification.deleteMany({ userId: deletedUserId });
+
+      if (user.role === 'org_admin' && user.organizationId) {
+        await Organization.updateOne(
+          { _id: user.organizationId, adminId: deletedUserId },
+          { $unset: { adminId: '' } }
+        );
+      }
 
       await AuditLog.create({
         userId: req.user._id,
@@ -260,7 +443,8 @@ exports.deleteUser = async (req, res, next) => {
         resource: 'user',
         resourceId: deletedUserId,
         details: {
-          type: 'operator_hard_delete',
+          type: 'user_hard_delete',
+          deletedUserRole: user.role,
           deletedUserEmail,
           deletedUserName,
           deletedAt: new Date(),
@@ -273,7 +457,9 @@ exports.deleteUser = async (req, res, next) => {
 
       return res.status(200).json({
         success: true,
-        message: 'Operator permanently deleted. Their email is now available for new signup.',
+        message: isSuperAdminDelete
+          ? 'User permanently deleted. Their email is now available for new signup.'
+          : 'Operator permanently deleted. Their email is now available for new signup.',
       });
     }
 
@@ -313,6 +499,16 @@ exports.verifyUser = async (req, res, next) => {
     user.verifiedBy = req.user._id;
     user.verifiedAt = new Date();
     await user.save();
+
+    // Optional real-time notify for manual Super Admin verify (no self-service listener)
+    if (req.io) {
+      req.io.to(`user:${user._id}`).emit('user:verified', {
+        userId: user._id,
+        role: user.role,
+        isVerified: true,
+        message: 'Your account has been approved.',
+      });
+    }
 
     res.status(200).json({
       success: true,

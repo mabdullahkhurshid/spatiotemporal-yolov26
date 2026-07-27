@@ -1,13 +1,16 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate, Link } from 'react-router-dom';
-import { register, verifyEmail } from '../../store/slices/authSlice';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
+import { register, verifyEmail, login } from '../../store/slices/authSlice';
 import toast from 'react-hot-toast';
 import { Mail, Lock, User, Building, AlertCircle } from 'lucide-react';
+import { getPostAuthRedirectPath, storePendingPlanId } from '../../utils/roleRoutes';
+import { socketService } from '../../services/socketService';
 
 const Register = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { loading, error } = useSelector((state) => state.auth);
   const [formData, setFormData] = useState({
     name: '',
@@ -18,6 +21,14 @@ const Register = () => {
   });
   const [showOTP, setShowOTP] = useState(false);
   const [otp, setOtp] = useState('');
+
+  useEffect(() => {
+    storePendingPlanId(searchParams.get('planId'));
+  }, [searchParams]);
+
+  const loginPath = searchParams.get('planId')
+    ? `/login?planId=${encodeURIComponent(searchParams.get('planId'))}`
+    : '/login';
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -30,7 +41,8 @@ const Register = () => {
       return;
     }
     try {
-      await dispatch(register(formData)).unwrap();
+      const { name, email, password } = formData;
+      await dispatch(register({ name, email, password })).unwrap();
       toast.success('Registration successful! Please verify your email.');
       setShowOTP(true);
     } catch (error) {
@@ -42,8 +54,12 @@ const Register = () => {
     e.preventDefault();
     try {
       await dispatch(verifyEmail({ email: formData.email, otp })).unwrap();
-      toast.success('Email verified! Please login.');
-      navigate('/login');
+      toast.success('Email verified! Signing you in...');
+      const result = await dispatch(
+        login({ email: formData.email, password: formData.password })
+      ).unwrap();
+      socketService.connect(localStorage.getItem('accessToken'));
+      navigate(getPostAuthRedirectPath(result.user.role));
     } catch (error) {
       toast.error(error || 'Verification failed');
     }
@@ -194,15 +210,15 @@ const Register = () => {
                   required
                 />
               </div>
-              <button type="submit" className="w-full btn-primary">
-                Verify Email
+              <button type="submit" className="w-full btn-primary" disabled={loading}>
+                {loading ? 'Verifying...' : 'Verify Email'}
               </button>
             </form>
           )}
 
           <p className="mt-6 text-center text-sm text-gray-600 dark:text-gray-400">
             Already have an account?{' '}
-            <Link to="/login" className="font-medium text-primary-600 hover:text-primary-500">
+            <Link to={loginPath} className="font-medium text-primary-600 hover:text-primary-500">
               Sign in
             </Link>
           </p>

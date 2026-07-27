@@ -137,9 +137,78 @@ const sendAlertEmail = async (user, alert, camera) => {
   });
 };
 
+// Send operator welcome email with login credentials
+const sendOperatorWelcomeEmail = async (user, plainPassword, loginUrl) => {
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #dc2626;">Welcome to Fire Detection System</h2>
+      <p>Hello ${user.name},</p>
+      <p>Your operator account has been created. Use the credentials below to sign in:</p>
+      <div style="background-color: #f3f4f6; padding: 20px; margin: 20px 0; border-radius: 8px;">
+        <p style="margin: 0 0 8px;"><strong>Username:</strong> ${user.email}</p>
+        <p style="margin: 0;"><strong>Password:</strong> ${plainPassword}</p>
+      </div>
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="${loginUrl}" style="background-color: #dc2626; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">Sign In</a>
+      </div>
+      <p>Or copy and paste this link in your browser:</p>
+      <p style="color: #6b7280; word-break: break-all;">${loginUrl}</p>
+      <p>Please change your password after your first login if your organization requires it.</p>
+      <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+      <p style="color: #6b7280; font-size: 12px;">Fire Detection System</p>
+    </div>
+  `;
+
+  const text = [
+    `Hello ${user.name},`,
+    '',
+    'Your operator account has been created.',
+    `Username: ${user.email}`,
+    `Password: ${plainPassword}`,
+    `Sign in: ${loginUrl}`,
+  ].join('\n');
+
+  return sendEmail({
+    email: user.email,
+    subject: 'Your Operator Account - Fire Detection System',
+    html,
+    text,
+  });
+};
+
+// Send contact form notification to business email
+const sendContactNotificationEmail = async (contact) => {
+  const businessEmail = process.env.CONTACT_EMAIL || process.env.EMAIL_FROM || process.env.EMAIL_USER;
+  if (!businessEmail) {
+    console.warn('No CONTACT_EMAIL configured. Contact saved but email not sent.');
+    return null;
+  }
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #dc2626;">New Contact Inquiry</h2>
+      <p><strong>From:</strong> ${contact.name} &lt;${contact.email}&gt;</p>
+      ${contact.organization ? `<p><strong>Organization:</strong> ${contact.organization}</p>` : ''}
+      <p><strong>Subject:</strong> ${contact.subject || 'General inquiry'}</p>
+      <div style="background-color: #f3f4f6; padding: 16px; margin: 16px 0; border-radius: 8px;">
+        <p style="margin: 0; white-space: pre-wrap;">${contact.message}</p>
+      </div>
+      <p style="color: #6b7280; font-size: 12px;">Received at ${new Date(contact.createdAt || Date.now()).toLocaleString()}</p>
+    </div>
+  `;
+
+  return sendEmail({
+    email: businessEmail,
+    subject: `[Contact] ${contact.subject || 'General inquiry'} — ${contact.name}`,
+    html,
+  });
+};
+
 module.exports = {
   sendEmail,
   sendVerificationEmail,
   sendPasswordResetEmail,
   sendAlertEmail,
+  sendOperatorWelcomeEmail,
+  sendContactNotificationEmail,
 };

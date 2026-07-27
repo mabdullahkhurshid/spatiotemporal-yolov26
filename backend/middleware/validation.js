@@ -14,6 +14,23 @@ exports.validate = (req, res, next) => {
   next();
 };
 
+// User creation validation (Org Admin / Super Admin)
+exports.validateCreateUser = [
+  body('name')
+    .trim()
+    .notEmpty()
+    .withMessage('Name is required')
+    .isLength({ min: 2 })
+    .withMessage('Name must be at least 2 characters'),
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Please provide a valid email'),
+  body('password')
+    .isLength({ min: 6 })
+    .withMessage('Password must be at least 6 characters'),
+];
+
 // User registration validation
 exports.validateRegister = [
   body("name")
@@ -52,6 +69,13 @@ exports.validateForgotPassword = [
 // Reset password validation
 exports.validateResetPassword = [
   body("token").notEmpty().withMessage("Reset token is required"),
+  body("password")
+    .isLength({ min: 6 })
+    .withMessage("Password must be at least 6 characters"),
+];
+
+// Set password validation (Google sign-in accounts)
+exports.validateSetPassword = [
   body("password")
     .isLength({ min: 6 })
     .withMessage("Password must be at least 6 characters"),

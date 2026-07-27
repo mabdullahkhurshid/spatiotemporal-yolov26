@@ -55,7 +55,7 @@ exports.protect = async (req, res, next) => {
 // Only ACTIVE organizations can access the system (non-super_admin)
 exports.requireActiveOrganization = async (req, res, next) => {
   try {
-    if (req.user.role === 'super_admin') return next();
+    if (req.user.role === 'super_admin' || req.user.role === 'customer') return next();
     if (!req.user.organizationId) {
       return res.status(403).json({
         success: false,
@@ -86,7 +86,7 @@ exports.requireActiveOrganization = async (req, res, next) => {
 // Require active, non-expired subscription for organization users
 exports.requireActiveSubscription = async (req, res, next) => {
   try {
-    if (req.user.role === 'super_admin') return next();
+    if (req.user.role === 'super_admin' || req.user.role === 'customer') return next();
     if (!req.user.organizationId) {
       return res.status(403).json({
         success: false,
@@ -138,15 +138,8 @@ exports.requireActiveSubscription = async (req, res, next) => {
   }
 };
 
-// Org_admin and operator must be verified by Super Admin for full access
+// Approval gate removed from self-service flow (ADR-002). Super Admin verify endpoint remains for manual edge cases.
 exports.requireVerifiedUser = (req, res, next) => {
-  if (req.user.role === 'super_admin') return next();
-  if ((req.user.role === 'org_admin' || req.user.role === 'operator') && !req.user.isVerified) {
-    return res.status(403).json({
-      success: false,
-      message: 'Your account is pending verification. You can only access your profile until approved.',
-    });
-  }
   next();
 };
 

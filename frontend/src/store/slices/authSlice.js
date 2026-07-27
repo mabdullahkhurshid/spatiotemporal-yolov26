@@ -41,6 +41,18 @@ export const getMe = createAsyncThunk('auth/getMe', async (_, { rejectWithValue 
   }
 });
 
+export const setPassword = createAsyncThunk(
+  'auth/setPassword',
+  async ({ password }, { rejectWithValue }) => {
+    try {
+      const response = await api.post('/auth/set-password', { password });
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || 'Failed to set password');
+    }
+  }
+);
+
 export const logout = createAsyncThunk('auth/logout', async (_, { rejectWithValue }) => {
   try {
     await api.post('/auth/logout');
@@ -105,6 +117,23 @@ const authSlice = createSlice({
       .addCase(getMe.fulfilled, (state, action) => {
         state.user = action.payload;
         state.isAuthenticated = true;
+        localStorage.setItem('user', JSON.stringify(action.payload));
+      })
+      // Set Password
+      .addCase(setPassword.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(setPassword.fulfilled, (state) => {
+        state.loading = false;
+        if (state.user) {
+          state.user = { ...state.user, needsPasswordSetup: false };
+          localStorage.setItem('user', JSON.stringify(state.user));
+        }
+      })
+      .addCase(setPassword.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload;
       })
       // Logout
       .addCase(logout.fulfilled, (state) => {

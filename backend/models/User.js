@@ -26,8 +26,8 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ['super_admin', 'org_admin', 'operator'],
-      default: 'operator',
+      enum: ['super_admin', 'org_admin', 'operator', 'customer'],
+      default: 'customer',
       required: true,
     },
     organizationId: {
@@ -73,6 +73,14 @@ const userSchema = new mongoose.Schema(
     lastLogin: {
       type: Date,
     },
+    phone: {
+      type: String,
+      trim: true,
+    },
+    avatar: {
+      type: String,
+      default: null,
+    },
     isActive: {
       type: Boolean,
       default: true,
@@ -102,7 +110,10 @@ userSchema.pre('save', async function (next) {
 
 // Compare password method
 userSchema.methods.comparePassword = async function (candidatePassword) {
-  return await bcrypt.compare(candidatePassword, this.password);
+  if (!this.password || !candidatePassword) {
+    return false;
+  }
+  return bcrypt.compare(candidatePassword, this.password);
 };
 
 // Soft delete

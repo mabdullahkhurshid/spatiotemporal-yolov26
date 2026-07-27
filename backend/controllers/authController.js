@@ -15,7 +15,7 @@ const crypto = require("crypto");
 // @access  Public
 exports.register = async (req, res, next) => {
   try {
-    const { name, email, password, organization } = req.body;
+    const { name, email, password } = req.body;
 
     // Check if user exists (active account)
     console.log("Checking for existing user with email:", email);
@@ -38,50 +38,15 @@ exports.register = async (req, res, next) => {
       });
     }
 
-    // Create organization first if provided
-    let organizationId = null;
-    let userRole = "operator";
-
-    if (organization) {
-      // Prevent duplicate organization names
-      const existingOrg = await Organization.findOne({
-        name: organization,
-        isDeleted: false,
-      });
-      if (existingOrg) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "An organization with this name already exists. Please choose a different name or contact support.",
-        });
-      }
-
-      const org = await Organization.create({
-        name: organization,
-        email: email,
-        adminId: null, // Will be set after user creation
-        status: "PENDING",
-      });
-      organizationId = org._id;
-      userRole = "org_admin";
-    }
-
-    // Create user: org_admin/operator need Super Admin verification (isVerified = false)
+    // Landing page registrants are customers until they purchase a plan
     const user = await User.create({
       name,
       email,
       password,
-      role: userRole,
-      organizationId: organizationId,
-      isVerified: userRole === "super_admin", // super_admin created via script is verified
+      role: "customer",
+      organizationId: null,
+      isVerified: true,
     });
-
-    // Update organization adminId if organization was created
-    if (organization && organizationId) {
-      await Organization.findByIdAndUpdate(organizationId, {
-        adminId: user._id,
-      });
-    }
 
     // Generate OTP
     const otp = generateOTP();
@@ -109,15 +74,15 @@ exports.register = async (req, res, next) => {
 
     res.status(201).json({
       success: true,
-      message: organization
-        ? "Registration successful. Please check your email for verification code."
-        : "Registration successful. Please check your email for verification code. Note: You will need to be assigned to an organization by an administrator.",
+      message:
+        "Registration successful. Please check your email for verification code.",
       user: {
         id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
         organizationId: user.organizationId || null,
+        isVerified: user.isVerified,
       },
     });
   } catch (error) {
@@ -194,6 +159,22 @@ exports.login = async (req, res, next) => {
       });
     }
 
+    // Google-only accounts have no local password until the user sets one
+    if (!user.password) {
+      if (user.googleId) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "This account uses Google sign-in. Sign in with Google, or set a password after signing in with Google.",
+          code: "GOOGLE_ACCOUNT_NO_PASSWORD",
+        });
+      }
+      return res.status(401).json({
+        success: false,
+        message: "Invalid credentials",
+      });
+    }
+
     // Check if password matches
     const isMatch = await user.comparePassword(password);
 
@@ -212,8 +193,8 @@ exports.login = async (req, res, next) => {
       });
     }
 
-    // Super admin bypasses org/verification checks; org_admin/operator need ACTIVE org and (for full access) isVerified
-    if (user.role !== "super_admin" && user.organizationId) {
+    // Customers and super_admin bypass org check; org_admin/operator need ACTIVE org
+    if (user.role !== "super_admin" && user.role !== "customer" && user.organizationId) {
       const org = await Organization.findOne({
         _id: user.organizationId,
         isDeleted: false,
@@ -229,6 +210,10 @@ exports.login = async (req, res, next) => {
     // Update last login
     user.lastLogin = new Date();
     await user.save();
+
+    if (user.organizationId) {
+      await user.populate('organizationId', 'name email');
+    }
 
     // Audit log
     await AuditLog.create({
@@ -285,10 +270,20 @@ exports.googleCallback = async (req, res, next) => {
     user.refreshToken = refreshToken;
     await user.save({ validateBeforeSave: false });
 
-    // Redirect with tokens
-    res.redirect(
-      `${process.env.FRONTEND_URL}/auth/callback?token=${accessToken}&refresh=${refreshToken}`,
+    const userWithPassword = await User.findById(user._id).select("+password");
+    const needsPassword = Boolean(
+      userWithPassword?.googleId && !userWithPassword?.password,
     );
+
+    // Redirect with tokens
+    const callbackUrl = new URL(`${process.env.FRONTEND_URL}/auth/callback`);
+    callbackUrl.searchParams.set("token", accessToken);
+    callbackUrl.searchParams.set("refresh", refreshToken);
+    if (needsPassword) {
+      callbackUrl.searchParams.set("needsPassword", "1");
+    }
+
+    res.redirect(callbackUrl.toString());
   } catch (error) {
     next(error);
   }
@@ -337,11 +332,51 @@ exports.logout = async (req, res, next) => {
 // @access  Private
 exports.getMe = async (req, res, next) => {
   try {
-    const user = await User.findById(req.user.id).populate("organizationId");
+    const user = await User.findById(req.user._id)
+      .populate("organizationId")
+      .select("+password");
+
+    const data = user.toObject();
+    data.needsPasswordSetup = Boolean(user.googleId && !user.password);
+    delete data.password;
 
     res.status(200).json({
       success: true,
-      data: user,
+      data,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Set password for Google sign-in accounts (first-time setup)
+// @route   POST /api/auth/set-password
+// @access  Private
+exports.setPassword = async (req, res, next) => {
+  try {
+    const { password } = req.body;
+    const user = await User.findById(req.user._id).select("+password");
+
+    if (!user.googleId) {
+      return res.status(400).json({
+        success: false,
+        message: "Password setup is only available for Google sign-in accounts.",
+      });
+    }
+
+    if (user.password) {
+      return res.status(400).json({
+        success: false,
+        message: "Password is already set. Use forgot password to change it.",
+      });
+    }
+
+    user.password = password;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Password set successfully. You can now sign in with email and password.",
     });
   } catch (error) {
     next(error);

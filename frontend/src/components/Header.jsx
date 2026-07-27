@@ -1,27 +1,39 @@
+import { Link } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
-import { Bell, Moon, Sun } from 'lucide-react';
+import { Bell, Moon, Sun, UserCircle } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { fetchNotifications, markAsRead } from '../store/slices/notificationSlice';
+import {
+  applyDarkMode,
+  getInitialDarkMode,
+  setTheme,
+  subscribeToThemeChanges,
+} from '../utils/theme';
 
 const Header = () => {
   const dispatch = useDispatch();
+  const { user } = useSelector((state) => state.auth);
   const { notifications, unreadCount } = useSelector((state) => state.notifications);
-  const [darkMode, setDarkMode] = useState(localStorage.getItem('darkMode') === 'true');
+  const isOrgAdmin = user?.role === 'org_admin';
+  const [darkMode, setDarkMode] = useState(getInitialDarkMode);
   const [showNotifications, setShowNotifications] = useState(false);
 
   useEffect(() => {
     dispatch(fetchNotifications());
-    if (darkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [dispatch, darkMode]);
+  }, [dispatch]);
+
+  useEffect(() => {
+    applyDarkMode(darkMode);
+  }, [darkMode]);
+
+  useEffect(() => subscribeToThemeChanges(setDarkMode), []);
 
   const toggleDarkMode = () => {
-    const newMode = !darkMode;
-    setDarkMode(newMode);
-    localStorage.setItem('darkMode', newMode.toString());
+    setDarkMode((current) => {
+      const next = !current;
+      setTheme(next);
+      return next;
+    });
   };
 
   const handleNotificationClick = (notification) => {
@@ -40,6 +52,16 @@ const Header = () => {
         </div>
 
         <div className="flex items-center space-x-4">
+          {isOrgAdmin && (
+            <Link
+              to="/customer/dashboard"
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            >
+              <UserCircle size={18} />
+              <span className="hidden sm:inline">Account</span>
+            </Link>
+          )}
+
           {/* Dark mode toggle */}
           <button
             onClick={toggleDarkMode}

@@ -18,10 +18,54 @@ exports.getOrganizations = async (req, res, next) => {
       .populate('subscriptionPlanId')
       .sort({ createdAt: -1 });
 
+    const orgIds = organizations.map((org) => org._id);
+
+    const [operatorAgg, userAgg] = orgIds.length
+      ? await Promise.all([
+          User.aggregate([
+            {
+              $match: {
+                organizationId: { $in: orgIds },
+                role: 'operator',
+                isDeleted: false,
+              },
+            },
+            { $group: { _id: '$organizationId', count: { $sum: 1 } } },
+          ]),
+          User.aggregate([
+            {
+              $match: {
+                organizationId: { $in: orgIds },
+                isDeleted: false,
+              },
+            },
+            { $group: { _id: '$organizationId', count: { $sum: 1 } } },
+          ]),
+        ])
+      : [[], []];
+
+    const operatorCountMap = Object.fromEntries(
+      operatorAgg.map((row) => [row._id.toString(), row.count])
+    );
+    const totalUsersMap = Object.fromEntries(
+      userAgg.map((row) => [row._id.toString(), row.count])
+    );
+
+    const data = organizations.map((org) => {
+      const obj = org.toObject();
+      const orgId = org._id.toString();
+      return {
+        ...obj,
+        admin: obj.adminId || null,
+        operatorCount: operatorCountMap[orgId] || 0,
+        totalUsers: totalUsersMap[orgId] || 0,
+      };
+    });
+
     res.status(200).json({
       success: true,
-      count: organizations.length,
-      data: organizations,
+      count: data.length,
+      data,
     });
   } catch (error) {
     next(error);
@@ -67,6 +111,13 @@ exports.getOrganization = async (req, res, next) => {
       role: 'operator',
       isDeleted: false,
     });
+    const operators = await User.find({
+      organizationId: organization._id,
+      role: 'operator',
+      isDeleted: false,
+    })
+      .select('name email')
+      .sort({ name: 1 });
 
     const maxCameras = organization.subscriptionPlanId
       ? organization.subscriptionPlanId.maxCameras
@@ -75,10 +126,14 @@ exports.getOrganization = async (req, res, next) => {
       ? organization.subscriptionPlanId.maxOperators
       : organization.maxOperators || 10;
 
+    const orgObject = organization.toObject();
+
     res.status(200).json({
       success: true,
       data: {
-        ...organization.toObject(),
+        ...orgObject,
+        admin: orgObject.adminId || null,
+        operators,
         stats: {
           cameras: cameraCount,
           users: userCount,
@@ -308,6 +363,13 @@ exports.suspendOrganization = async (req, res, next) => {
       });
     }
 
+    if (organization.status !== 'ACTIVE') {
+      return res.status(400).json({
+        success: false,
+        message: 'Only active organizations can be suspended',
+      });
+    }
+
     organization.status = 'SUSPENDED';
     await organization.save();
 
@@ -315,6 +377,40 @@ exports.suspendOrganization = async (req, res, next) => {
       success: true,
       data: organization,
       message: 'Organization suspended',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Unsuspend organization (status → ACTIVE)
+// @route   PUT /api/organizations/:id/unsuspend
+// @access  Private (Super Admin)
+exports.unsuspendOrganization = async (req, res, next) => {
+  try {
+    const organization = await Organization.findById(req.params.id);
+
+    if (!organization || organization.isDeleted) {
+      return res.status(404).json({
+        success: false,
+        message: 'Organization not found',
+      });
+    }
+
+    if (organization.status !== 'SUSPENDED') {
+      return res.status(400).json({
+        success: false,
+        message: 'Only suspended organizations can be unsuspended',
+      });
+    }
+
+    organization.status = 'ACTIVE';
+    await organization.save();
+
+    res.status(200).json({
+      success: true,
+      data: organization,
+      message: 'Organization unsuspended',
     });
   } catch (error) {
     next(error);

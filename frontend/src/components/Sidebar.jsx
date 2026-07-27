@@ -10,10 +10,12 @@ import {
   FileText, 
   ShoppingCart,
   Package,
+  CreditCard,
   UserCog,
   LogOut,
   Menu,
-  X
+  X,
+  UserCircle,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -41,6 +43,7 @@ const Sidebar = ({ role, isOpen, setIsOpen }) => {
     { path: '/cameras', label: 'Cameras', icon: Camera },
     { path: '/alerts', label: 'Alerts', icon: AlertTriangle },
     { path: '/operators', label: 'Operators', icon: Users },
+    { path: '/subscription', label: 'Subscription', icon: CreditCard },
     { path: '/reports', label: 'Reports', icon: FileText },
   ];
 
@@ -79,6 +82,23 @@ const Sidebar = ({ role, isOpen, setIsOpen }) => {
 
           {/* Navigation */}
           <nav className="flex-1 p-4 space-y-2">
+            {role === 'org_admin' && (
+              <NavLink
+                to="/customer/dashboard"
+                className={({ isActive }) =>
+                  `flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
+                    isActive
+                      ? 'bg-primary-600 text-white'
+                      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                  }`
+                }
+                onClick={() => setIsOpen(false)}
+              >
+                <UserCircle size={20} />
+                <span>Account</span>
+              </NavLink>
+            )}
+
             {links.map((link) => {
               const Icon = link.icon;
               return (

@@ -1,9 +1,10 @@
 import { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
+import toast from 'react-hot-toast';
 import { setUser } from '../../store/slices/authSlice';
 import { socketService } from '../../services/socketService';
-import toast from 'react-hot-toast';
+import { getPostAuthRedirectPath } from '../../utils/roleRoutes';
 
 const OAuthCallback = () => {
   const navigate = useNavigate();
@@ -13,12 +14,12 @@ const OAuthCallback = () => {
   useEffect(() => {
     const token = searchParams.get('token');
     const refresh = searchParams.get('refresh');
+    const needsPasswordParam = searchParams.get('needsPassword') === '1';
 
     if (token && refresh) {
       localStorage.setItem('accessToken', token);
       localStorage.setItem('refreshToken', refresh);
 
-      // Fetch user data
       fetch('/api/auth/me', {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -32,14 +33,13 @@ const OAuthCallback = () => {
             dispatch(setUser(data.data));
             socketService.connect(token);
 
-            const role = data.data.role;
-            if (role === 'super_admin') {
-              navigate('/superadmin/dashboard');
-            } else if (role === 'org_admin') {
-              navigate('/orgadmin/dashboard');
-            } else {
-              navigate('/operator/dashboard');
+            if (needsPasswordParam || data.data.needsPasswordSetup) {
+              toast.success('Google sign-in successful. Please set a password to continue.');
+              navigate('/auth/set-password');
+              return;
             }
+
+            navigate(getPostAuthRedirectPath(data.data.role));
             toast.success('Login successful!');
           } else {
             throw new Error('Failed to get user data');

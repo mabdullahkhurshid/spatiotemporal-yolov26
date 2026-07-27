@@ -1,19 +1,21 @@
 import { useState, useEffect } from 'react';
 import {
   getOrganizations,
+  getOrganization,
   approveOrganization,
   rejectOrganization,
   suspendOrganization,
+  unsuspendOrganization,
   deleteOrganization,
 } from '../../services/apiEndpoints';
-import { Building2, Check, X, Pause, Trash2, RefreshCw } from 'lucide-react';
+import { Building2, Check, X, Pause, Play, Trash2, RefreshCw, ChevronRight, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const STATUS_COLORS = {
   PENDING: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
   ACTIVE: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
   REJECTED: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
-  SUSPENDED: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300',
+  SUSPENDED: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
 };
 
 const SuperAdminOrganizations = () => {
@@ -21,6 +23,7 @@ const SuperAdminOrganizations = () => {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
   const [rejectModal, setRejectModal] = useState({ open: false, org: null, reason: '' });
+  const [detailDrawer, setDetailDrawer] = useState({ open: false, org: null, loading: false });
 
   const loadOrganizations = async () => {
     try {
@@ -38,11 +41,30 @@ const SuperAdminOrganizations = () => {
     loadOrganizations();
   }, [statusFilter]);
 
-  const handleApprove = async (org) => {
+  const openOrgDetail = async (org) => {
+    setDetailDrawer({ open: true, org: null, loading: true });
+    try {
+      const response = await getOrganization(org._id);
+      setDetailDrawer({ open: true, org: response.data.data, loading: false });
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to load organization details');
+      setDetailDrawer({ open: false, org: null, loading: false });
+    }
+  };
+
+  const closeDetailDrawer = () => {
+    setDetailDrawer({ open: false, org: null, loading: false });
+  };
+
+  const handleApprove = async (org, event) => {
+    event?.stopPropagation();
     try {
       await approveOrganization(org._id);
       toast.success('Organization approved');
       loadOrganizations();
+      if (detailDrawer.org?._id === org._id) {
+        openOrgDetail(org);
+      }
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to approve');
     }
@@ -56,30 +78,102 @@ const SuperAdminOrganizations = () => {
         toast.success('Organization rejected');
         setRejectModal({ open: false, org: null, reason: '' });
         loadOrganizations();
+        if (detailDrawer.org?._id === org._id) {
+          closeDetailDrawer();
+        }
       })
       .catch((err) => toast.error(err.response?.data?.message || 'Failed to reject'));
   };
 
-  const handleSuspend = async (org) => {
+  const handleSuspend = async (org, event) => {
+    event?.stopPropagation();
     try {
       await suspendOrganization(org._id);
       toast.success('Organization suspended');
       loadOrganizations();
+      if (detailDrawer.org?._id === org._id) {
+        openOrgDetail(org);
+      }
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to suspend');
     }
   };
 
-  const handleDelete = async (org) => {
+  const handleUnsuspend = async (org, event) => {
+    event?.stopPropagation();
+    try {
+      await unsuspendOrganization(org._id);
+      toast.success('Organization unsuspended');
+      loadOrganizations();
+      if (detailDrawer.org?._id === org._id) {
+        openOrgDetail(org);
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to unsuspend');
+    }
+  };
+
+  const handleDelete = async (org, event) => {
+    event?.stopPropagation();
     if (!window.confirm(`Soft delete organization "${org.name}"?`)) return;
     try {
       await deleteOrganization(org._id);
       toast.success('Organization deleted');
+      if (detailDrawer.org?._id === org._id) {
+        closeDetailDrawer();
+      }
       loadOrganizations();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to delete');
     }
   };
+
+  const renderOrgDetails = (org) => {
+    const admin = org.admin || org.adminId;
+    const operatorCount = org.stats?.operators ?? org.operatorCount ?? 0;
+    const operators = org.operators || [];
+
+    return (
+      <div className="space-y-4 text-sm">
+        <div>
+          <p className="text-gray-500 dark:text-gray-400">Organization Name</p>
+          <p className="font-semibold text-lg text-gray-900 dark:text-white">{org.name}</p>
+        </div>
+        <div>
+          <p className="text-gray-500 dark:text-gray-400">Admin Name</p>
+          <p className="font-medium text-gray-900 dark:text-white">{admin?.name || '—'}</p>
+        </div>
+        <div>
+          <p className="text-gray-500 dark:text-gray-400">Email</p>
+          <p className="font-medium text-gray-900 dark:text-white break-all">{admin?.email || '—'}</p>
+        </div>
+        <div>
+          <p className="text-gray-500 dark:text-gray-400">Total Operators</p>
+          <p className="font-medium text-gray-900 dark:text-white">{operatorCount}</p>
+        </div>
+        {operators.length > 0 ? (
+          <div>
+            <p className="text-gray-500 dark:text-gray-400 mb-2">Operators</p>
+            <ul className="space-y-2">
+              {operators.map((op) => (
+                <li
+                  key={op._id}
+                  className="rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2 bg-white dark:bg-gray-800"
+                >
+                  <p className="font-medium text-gray-900 dark:text-white">{op.name}</p>
+                  <p className="text-gray-600 dark:text-gray-400">{op.email}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <p className="text-gray-500 dark:text-gray-400">No operators yet</p>
+        )}
+      </div>
+    );
+  };
+
+  const detailOrg = detailDrawer.org;
 
   return (
     <div className="space-y-6">
@@ -115,7 +209,19 @@ const SuperAdminOrganizations = () => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {organizations.map((org) => (
-            <div key={org._id} className="card">
+            <div
+              key={org._id}
+              role="button"
+              tabIndex={0}
+              onClick={() => openOrgDetail(org)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  openOrgDetail(org);
+                }
+              }}
+              className="card cursor-pointer transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
               <div className="flex items-center space-x-4 mb-4">
                 <div className="bg-blue-100 dark:bg-blue-900 p-3 rounded-lg">
                   <Building2 className="text-blue-600 dark:text-blue-400" size={24} />
@@ -124,6 +230,7 @@ const SuperAdminOrganizations = () => {
                   <h3 className="font-semibold text-lg truncate">{org.name}</h3>
                   <p className="text-sm text-gray-600 dark:text-gray-400 truncate">{org.email}</p>
                 </div>
+                <ChevronRight size={18} className="text-gray-400 shrink-0" />
               </div>
               <div className="space-y-2 mb-4">
                 <div className="flex justify-between text-sm">
@@ -136,23 +243,36 @@ const SuperAdminOrganizations = () => {
                     {org.status || 'PENDING'}
                   </span>
                 </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600 dark:text-gray-400">Org Admin:</span>
+                  <span className="font-medium truncate ml-2">{org.admin?.name || '—'}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600 dark:text-gray-400 flex items-center gap-1">
+                    <Users size={14} /> Operators:
+                  </span>
+                  <span className="font-medium">{org.operatorCount ?? 0}</span>
+                </div>
                 {org.rejectionReason && (
                   <p className="text-xs text-red-600 dark:text-red-400 mt-1">Reason: {org.rejectionReason}</p>
                 )}
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2" onClick={(e) => e.stopPropagation()}>
                 {org.status === 'PENDING' && (
                   <>
                     <button
                       type="button"
-                      onClick={() => handleApprove(org)}
+                      onClick={(e) => handleApprove(org, e)}
                       className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-600 text-white text-sm hover:bg-green-700"
                     >
                       <Check size={14} /> Approve
                     </button>
                     <button
                       type="button"
-                      onClick={() => setRejectModal({ open: true, org, reason: '' })}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRejectModal({ open: true, org, reason: '' });
+                      }}
                       className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-600 text-white text-sm hover:bg-red-700"
                     >
                       <X size={14} /> Reject
@@ -162,15 +282,24 @@ const SuperAdminOrganizations = () => {
                 {org.status === 'ACTIVE' && (
                   <button
                     type="button"
-                    onClick={() => handleSuspend(org)}
+                    onClick={(e) => handleSuspend(org, e)}
                     className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm hover:bg-amber-700"
                   >
                     <Pause size={14} /> Suspend
                   </button>
                 )}
+                {org.status === 'SUSPENDED' && (
+                  <button
+                    type="button"
+                    onClick={(e) => handleUnsuspend(org, e)}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-600 text-white text-sm hover:bg-green-700"
+                  >
+                    <Play size={14} /> Unsuspend
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => handleDelete(org)}
+                  onClick={(e) => handleDelete(org, e)}
                   className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-red-300 text-red-600 dark:border-red-700 dark:text-red-400 text-sm hover:bg-red-50 dark:hover:bg-red-900/20"
                 >
                   <Trash2 size={14} /> Delete
@@ -181,8 +310,121 @@ const SuperAdminOrganizations = () => {
         </div>
       )}
 
+      {detailDrawer.open && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={closeDetailDrawer}>
+          <div
+            className="w-full max-w-md h-full bg-white dark:bg-gray-800 shadow-xl overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Organization details</h3>
+              <button
+                type="button"
+                onClick={closeDetailDrawer}
+                className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500"
+                aria-label="Close"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {detailDrawer.loading ? (
+                <div className="text-center py-8 text-gray-500">Loading details...</div>
+              ) : detailOrg ? (
+                <>
+                  <div className="flex items-center gap-3">
+                    <div className="bg-blue-100 dark:bg-blue-900 p-3 rounded-lg">
+                      <Building2 className="text-blue-600 dark:text-blue-400" size={24} />
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">Status</p>
+                      <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${STATUS_COLORS[detailOrg.status] || 'bg-gray-100 text-gray-800'}`}>
+                        {detailOrg.status || 'PENDING'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-900/40">
+                    {renderOrgDetails(detailOrg)}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                      <p className="text-gray-500 dark:text-gray-400">Total users</p>
+                      <p className="font-semibold text-lg">{detailOrg.stats?.users ?? detailOrg.totalUsers ?? 0}</p>
+                    </div>
+                    <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                      <p className="text-gray-500 dark:text-gray-400">Cameras</p>
+                      <p className="font-semibold text-lg">{detailOrg.stats?.cameras ?? 0}</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Plan</span>
+                      <span>{detailOrg.subscriptionPlanId?.name || detailOrg.subscriptionPlan}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Contact email</span>
+                      <span className="truncate ml-2">{detailOrg.email}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                    {detailOrg.status === 'PENDING' && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleApprove(detailOrg)}
+                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-600 text-white text-sm hover:bg-green-700"
+                        >
+                          <Check size={14} /> Approve
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setRejectModal({ open: true, org: detailOrg, reason: '' })}
+                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-600 text-white text-sm hover:bg-red-700"
+                        >
+                          <X size={14} /> Reject
+                        </button>
+                      </>
+                    )}
+                    {detailOrg.status === 'ACTIVE' && (
+                      <button
+                        type="button"
+                        onClick={() => handleSuspend(detailOrg)}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm hover:bg-amber-700"
+                      >
+                        <Pause size={14} /> Suspend
+                      </button>
+                    )}
+                    {detailOrg.status === 'SUSPENDED' && (
+                      <button
+                        type="button"
+                        onClick={() => handleUnsuspend(detailOrg)}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-600 text-white text-sm hover:bg-green-700"
+                      >
+                        <Play size={14} /> Unsuspend
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(detailOrg)}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-red-300 text-red-600 dark:border-red-700 dark:text-red-400 text-sm hover:bg-red-50 dark:hover:bg-red-900/20"
+                    >
+                      <Trash2 size={14} /> Delete
+                    </button>
+                  </div>
+                </>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
+
       {rejectModal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-semibold mb-2">Reject organization</h3>
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">{rejectModal.org?.name}</p>

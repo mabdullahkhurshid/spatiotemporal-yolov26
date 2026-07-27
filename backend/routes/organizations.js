@@ -9,6 +9,7 @@ const {
   approveOrganization,
   rejectOrganization,
   suspendOrganization,
+  unsuspendOrganization,
 } = require('../controllers/organizationController');
 const { protect, authorize, checkOrganizationAccess, requireActiveOrganization, requireVerifiedUser } = require('../middleware/auth');
 
@@ -20,6 +21,7 @@ router.route('/').get(authorize('super_admin'), getOrganizations).post(authorize
 router.put('/:id/approve', authorize('super_admin'), approveOrganization);
 router.put('/:id/reject', authorize('super_admin'), rejectOrganization);
 router.put('/:id/suspend', authorize('super_admin'), suspendOrganization);
+router.put('/:id/unsuspend', authorize('super_admin'), unsuspendOrganization);
 
 router
   .route('/:id')

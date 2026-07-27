@@ -2,11 +2,21 @@ import { useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchAlerts } from '../../store/slices/alertSlice';
 import { fetchCameras } from '../../store/slices/cameraSlice';
-import { Camera, AlertTriangle, Activity } from 'lucide-react';
+import { getMe } from '../../store/slices/authSlice';
+import { Camera, AlertTriangle, Activity, Building2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+
+const getOrganizationName = (user) => {
+  if (!user) return null;
+  if (typeof user.organizationId === 'object' && user.organizationId?.name) {
+    return user.organizationId.name;
+  }
+  return user.organizationName || null;
+};
 
 const OperatorDashboard = () => {
   const dispatch = useDispatch();
+  const { user } = useSelector((state) => state.auth);
   const { cameras } = useSelector((state) => state.cameras);
   const { alerts } = useSelector((state) => state.alerts);
 
@@ -15,14 +25,42 @@ const OperatorDashboard = () => {
     dispatch(fetchAlerts({ limit: 10 }));
   }, [dispatch]);
 
+  useEffect(() => {
+    if (!getOrganizationName(user)) {
+      dispatch(getMe());
+    }
+  }, [dispatch, user]);
+
   const onlineCameras = cameras.filter((c) => c.status === 'online').length;
   const activeAlerts = alerts.filter((a) => a.status === 'active').length;
+  const organizationName = getOrganizationName(user);
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Operator Dashboard</h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-2">Monitor live cameras and alerts</p>
+        <p className="text-gray-600 dark:text-gray-400 mt-2">
+          Welcome, {user?.name || 'Operator'}. Monitor live cameras and alerts
+          {organizationName ? ` for ${organizationName}` : ''}.
+        </p>
+      </div>
+
+      <div className="card border-l-4 border-indigo-600">
+        <div className="flex items-start gap-4">
+          <div className="bg-indigo-100 dark:bg-indigo-900/40 p-3 rounded-lg">
+            <Building2 className="text-indigo-600 dark:text-indigo-400" size={24} />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Your role</p>
+            <p className="text-lg font-semibold text-gray-900 dark:text-white mt-1">Operator</p>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+              Organization:{' '}
+              <span className="font-medium text-gray-900 dark:text-white">
+                {organizationName || 'Loading organization...'}
+              </span>
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -121,7 +159,7 @@ const OperatorDashboard = () => {
             </div>
             <div>
               <h3 className="text-lg font-semibold">View Live Cameras</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Monitor all cameras in real-time</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">Monitor assigned cameras in real-time</p>
             </div>
           </div>
         </Link>

@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const Notification = require('../models/Notification');
-const { protect, requireActiveOrganization, requireVerifiedUser } = require('../middleware/auth');
+const { protect, authorize, requireActiveOrganization, requireVerifiedUser } = require('../middleware/auth');
 
 router.use(protect);
+router.use(authorize('super_admin', 'org_admin', 'operator'));
 router.use(requireActiveOrganization);
 router.use(requireVerifiedUser);
 

@@ -1,18 +1,29 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { login } from "../../store/slices/authSlice";
 import toast from "react-hot-toast";
 import { Mail, Lock, AlertCircle } from "lucide-react";
+import { getPostAuthRedirectPath, storePendingPlanId } from "../../utils/roleRoutes";
+import { socketService } from "../../services/socketService";
 
 const Login = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { loading, error } = useSelector((state) => state.auth);
   const [formData, setFormData] = useState({
     email: "",
     password: "",
   });
+
+  useEffect(() => {
+    storePendingPlanId(searchParams.get("planId"));
+  }, [searchParams]);
+
+  const registerPath = searchParams.get("planId")
+    ? `/register?planId=${encodeURIComponent(searchParams.get("planId"))}`
+    : "/register";
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -23,16 +34,16 @@ const Login = () => {
     try {
       const result = await dispatch(login(formData)).unwrap();
       toast.success("Login successful!");
-      const role = result.user.role;
-      if (role === "super_admin") {
-        navigate("/superadmin/dashboard");
-      } else if (role === "org_admin") {
-        navigate("/orgadmin/dashboard");
-      } else {
-        navigate("/operator/dashboard");
-      }
+      socketService.connect(localStorage.getItem("accessToken"));
+      navigate(getPostAuthRedirectPath(result.user.role));
     } catch (error) {
-      toast.error(error || "Login failed");
+      const message = error || "Login failed";
+      toast.error(message);
+      if (typeof message === "string" && message.includes("Google sign-in")) {
+        toast("Use the Google button above, or sign in with Google once to set a password.", {
+          icon: "ℹ️",
+        });
+      }
     }
   };
 
@@ -191,7 +202,7 @@ const Login = () => {
           <p className="mt-6 text-center text-sm text-gray-600 dark:text-gray-400">
             Don't have an account?{" "}
             <Link
-              to="/register"
+              to={registerPath}
               className="font-medium text-primary-600 hover:text-primary-500"
             >
               Sign up

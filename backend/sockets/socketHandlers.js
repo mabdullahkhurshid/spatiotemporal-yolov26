@@ -33,6 +33,20 @@ const handleSocketConnection = (io) => {
   io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
+    // Personal room (optional; Super Admin manual verify may emit here)
+    socket.on('join:user', (userId) => {
+      if (userId) {
+        socket.join(`user:${userId}`);
+        console.log(`Socket ${socket.id} joined user room ${userId}`);
+      }
+    });
+
+    socket.on('leave:user', (userId) => {
+      if (userId) {
+        socket.leave(`user:${userId}`);
+      }
+    });
+
     socket.on('join:organization', (organizationId) => {
       socket.join(`org:${organizationId}`);
       console.log(`Socket ${socket.id} joined organization ${organizationId}`);

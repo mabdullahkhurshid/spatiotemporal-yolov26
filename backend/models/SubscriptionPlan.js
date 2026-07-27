@@ -58,8 +58,20 @@ const subscriptionPlanSchema = new mongoose.Schema(
     },
     billingCycle: {
       type: String,
-      enum: ['monthly', 'yearly', 'custom'],
+      enum: ['monthly', 'quarterly', 'yearly', 'custom'],
       default: 'monthly',
+    },
+    displayOrder: {
+      type: Number,
+      default: 0,
+    },
+    isPopular: {
+      type: Boolean,
+      default: false,
+    },
+    isRecommended: {
+      type: Boolean,
+      default: false,
     },
     description: {
       type: String,

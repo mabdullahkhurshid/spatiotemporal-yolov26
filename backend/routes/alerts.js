@@ -13,6 +13,7 @@ const { protect, authorize, requireActiveOrganization, requireVerifiedUser, requ
 const { validateAlert, validate } = require('../middleware/validation');
 
 router.use(protect);
+router.use(authorize('super_admin', 'org_admin', 'operator'));
 router.use(requireActiveOrganization);
 router.use(requireVerifiedUser);
 router.use(requireActiveSubscription);

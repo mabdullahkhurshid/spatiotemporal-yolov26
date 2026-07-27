@@ -35,13 +35,14 @@ passport.use(
           return done(null, user);
         }
 
-        // Create new user
+        // Create new customer (pre-purchase); password optional until user sets one
         user = await User.create({
           name: profile.displayName,
           email: profile.emails[0].value,
           googleId: profile.id,
           isEmailVerified: true,
-          role: 'operator', // Default role, can be changed by admin
+          isVerified: true,
+          role: 'customer',
           lastLogin: new Date(),
         });
 

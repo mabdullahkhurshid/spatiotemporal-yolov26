@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useSelector } from 'react-redux';
 import {
   getUsers,
   verifyUser,
@@ -13,7 +12,6 @@ import { Check, Pause, Play, Key, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const SuperAdminUsers = () => {
-  const currentUserRole = useSelector((state) => state.auth.user?.role);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState({ open: false, user: null, newPassword: '' });
@@ -91,10 +89,7 @@ const SuperAdminUsers = () => {
   };
 
   const handleDelete = async (user) => {
-    const isHardDelete = currentUserRole === 'super_admin' && user.role === 'operator';
-    const confirmMessage = isHardDelete
-      ? `Permanently delete operator "${user.name}" (${user.email})? They will be removed from the database, login will be blocked immediately, and their email will be available for new signup. This cannot be undone.`
-      : `Remove user "${user.name}"?`;
+    const confirmMessage = `Permanently delete user "${user.name}" (${user.email})? They will be removed from the database, login will be blocked immediately, and their email will be available for new signup. This cannot be undone.`;
     if (!window.confirm(confirmMessage)) return;
     try {
       const res = await deleteUser(user._id);
@@ -106,7 +101,12 @@ const SuperAdminUsers = () => {
     }
   };
 
-  const roleLabel = (r) => (r === 'super_admin' ? 'Super Admin' : r === 'org_admin' ? 'Org Admin' : 'Operator');
+  const roleLabel = (r) => {
+    if (r === 'super_admin') return 'Super Admin';
+    if (r === 'org_admin') return 'Org Admin';
+    if (r === 'customer') return 'Customer';
+    return 'Operator';
+  };
 
   return (
     <div className="space-y-6">

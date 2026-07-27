@@ -30,16 +30,22 @@ const sendTokenResponse = (user, statusCode, res) => {
     sameSite: 'strict',
   };
 
+  const org = user.organizationId && typeof user.organizationId === 'object' ? user.organizationId : null;
+
   res.status(statusCode).cookie('accessToken', accessToken, options).cookie('refreshToken', refreshToken, options).json({
     success: true,
     accessToken,
     refreshToken,
     user: {
       id: user._id,
+      _id: user._id,
       name: user.name,
       email: user.email,
       role: user.role,
-      organizationId: user.organizationId,
+      organizationId: org || user.organizationId,
+      organizationName: org?.name || null,
+      phone: user.phone,
+      avatar: user.avatar,
       isEmailVerified: user.isEmailVerified,
       isVerified: user.isVerified,
     },

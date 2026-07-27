@@ -7,6 +7,9 @@ import App from "./App";
 import { store } from "./store/store";
 import ErrorBoundary from "./components/ErrorBoundary";
 import "./index.css";
+import { initTheme } from "./utils/theme";
+
+initTheme();
 
 window.addEventListener("unhandledrejection", (event) => {
   // eslint-disable-next-line no-console

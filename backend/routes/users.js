@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const {
+  getAccountSummary,
   getUsers,
   getUser,
   createUser,
@@ -13,12 +14,15 @@ const {
 } = require('../controllers/userController');
 const { protect, authorize, requireActiveOrganization, requireVerifiedUser } = require('../middleware/auth');
 const { body } = require('express-validator');
-const { validate } = require('../middleware/validation');
+const { validate, validateCreateUser } = require('../middleware/validation');
 
 router.use(protect);
+
+router.get('/me/account-summary', authorize('customer', 'org_admin'), getAccountSummary);
+
 router.use(requireActiveOrganization);
 
-router.route('/').get(authorize('super_admin', 'org_admin'), requireVerifiedUser, getUsers).post(authorize('super_admin', 'org_admin'), requireVerifiedUser, createUser);
+router.route('/').get(authorize('super_admin', 'org_admin'), requireVerifiedUser, getUsers).post(authorize('super_admin', 'org_admin'), requireVerifiedUser, validateCreateUser, validate, createUser);
 
 router.put('/:id/verify', authorize('super_admin'), verifyUser);
 router.put('/:id/suspend', authorize('super_admin', 'org_admin'), suspendUser);

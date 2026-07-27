@@ -9,6 +9,7 @@ export const deleteOrganization = (id) => api.delete(`/organizations/${id}`);
 export const approveOrganization = (id) => api.put(`/organizations/${id}/approve`);
 export const rejectOrganization = (id, rejectionReason) => api.put(`/organizations/${id}/reject`, { rejectionReason });
 export const suspendOrganization = (id) => api.put(`/organizations/${id}/suspend`);
+export const unsuspendOrganization = (id) => api.put(`/organizations/${id}/unsuspend`);
 
 // Subscription Plans (Super Admin)
 export const getSubscriptionPlans = (params) => api.get('/subscription-plans', { params });
@@ -16,6 +17,8 @@ export const getSubscriptionPlan = (id) => api.get(`/subscription-plans/${id}`);
 export const createSubscriptionPlan = (data) => api.post('/subscription-plans', data);
 export const updateSubscriptionPlan = (id, data) => api.put(`/subscription-plans/${id}`, data);
 export const deactivateSubscriptionPlan = (id) => api.put(`/subscription-plans/${id}/deactivate`);
+export const reactivateSubscriptionPlan = (id) => api.put(`/subscription-plans/${id}/activate`);
+export const deleteSubscriptionPlan = (id) => api.delete(`/subscription-plans/${id}`);
 export const assignPlanToOrganization = (planId, organizationId) =>
   api.put(`/subscription-plans/${planId}/assign/${organizationId}`);
 
