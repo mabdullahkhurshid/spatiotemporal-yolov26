@@ -10,6 +10,7 @@ import {
   assignCamerasToOperator,
 } from '../../services/apiEndpoints';
 import api from '../../services/api';
+import { Link } from 'react-router-dom';
 import { Plus, Trash2, Camera, Pencil, Pause, Play } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -351,19 +352,31 @@ const OrgAdminOperators = () => {
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-semibold mb-2">Assign cameras to {assignModal.operator.name}</h3>
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">Select cameras this operator can view.</p>
-            <div className="space-y-2 mb-4">
-              {assignModal.allCameras.map((cam) => (
-                <label key={cam._id} className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={assignModal.selectedCameraIds.includes(cam._id)}
-                    onChange={() => toggleCamera(cam._id)}
-                    className="rounded"
-                  />
-                  <span>{cam.name || cam.label} — {cam.location}</span>
-                </label>
-              ))}
-            </div>
+            {assignModal.allCameras.length === 0 ? (
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                No cameras yet.{' '}
+                <Link to="/orgadmin/cameras" className="text-primary-600 hover:text-primary-700 font-medium">
+                  Add cameras on the Cameras page
+                </Link>{' '}
+                first.
+              </p>
+            ) : (
+              <div className="space-y-2 mb-4">
+                {assignModal.allCameras.map((cam) => (
+                  <label key={cam._id} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={assignModal.selectedCameraIds.includes(cam._id)}
+                      onChange={() => toggleCamera(cam._id)}
+                      className="rounded"
+                    />
+                    <span>
+                      {cam.displayNumber || cam.name || cam.label} — {cam.location}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setAssignModal({ open: false, operator: null, selectedCameraIds: [], allCameras: [] })} className="px-4 py-2 rounded-lg border dark:border-gray-600">Cancel</button>
               <button type="button" onClick={handleAssignCameras} className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700">Save</button>

@@ -82,14 +82,18 @@ exports.validateSetPassword = [
 ];
 
 // Camera validation (name or label required for backward compatibility)
+const IP_ADDRESS_REGEX =
+  /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+
 exports.validateCamera = [
   body("name").optional().trim(),
   body("label").optional().trim(),
-  body("ipAddress")
-    .matches(
-      /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/,
-    )
-    .withMessage("Please provide a valid IP address"),
+  body("cameraType")
+    .optional()
+    .isIn(["ip_rtsp", "http_mjpeg", "onvif"])
+    .withMessage("Invalid camera type"),
+  body("displayNumber").optional().trim(),
+  body("streamUrl").optional().trim(),
   body("location").trim().notEmpty().withMessage("Camera location is required"),
   (req, res, next) => {
     if (!req.body.name && !req.body.label) {
@@ -99,6 +103,31 @@ exports.validateCamera = [
         errors: [{ msg: "Camera name or label is required", path: "name" }],
       });
     }
+
+    const cameraType = req.body.cameraType || "ip_rtsp";
+
+    if (cameraType === "ip_rtsp" || cameraType === "onvif") {
+      const ip = req.body.ipAddress?.trim();
+      if (!ip || !IP_ADDRESS_REGEX.test(ip)) {
+        return res.status(400).json({
+          success: false,
+          message: "Validation error",
+          errors: [{ msg: "Please provide a valid IP address", path: "ipAddress" }],
+        });
+      }
+    }
+
+    if (cameraType === "http_mjpeg") {
+      const streamUrl = req.body.streamUrl?.trim();
+      if (!streamUrl) {
+        return res.status(400).json({
+          success: false,
+          message: "Validation error",
+          errors: [{ msg: "Stream URL is required for HTTP MJPEG cameras", path: "streamUrl" }],
+        });
+      }
+    }
+
     next();
   },
 ];
@@ -115,6 +144,36 @@ exports.validateOrganization = [
   body("address.state").optional().trim(),
   body("address.zipCode").optional().trim(),
   body("address.country").optional().trim(),
+];
+
+// Order update validation (Super Admin)
+exports.validateUpdateOrder = [
+  body("status")
+    .optional()
+    .isIn(["pending", "approved", "rejected", "cancelled"])
+    .withMessage("Invalid order status"),
+  body("subscriptionPlan")
+    .optional()
+    .isIn(["basic", "pro", "enterprise"])
+    .withMessage("Invalid subscription plan"),
+  body("amount")
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage("Amount must be zero or greater"),
+  body("notes").optional().trim(),
+  body("paymentIntentId").optional().trim(),
+  (req, res, next) => {
+    const fields = ["status", "subscriptionPlan", "amount", "notes", "paymentIntentId"];
+    const hasField = fields.some((field) => req.body[field] !== undefined);
+    if (!hasField) {
+      return res.status(400).json({
+        success: false,
+        message: "Validation error",
+        errors: [{ msg: "At least one field is required to update the order", path: "body" }],
+      });
+    }
+    next();
+  },
 ];
 
 // Alert validation

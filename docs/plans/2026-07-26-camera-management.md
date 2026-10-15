@@ -365,7 +365,7 @@ When `allCameras.length === 0` in assign modal, show: “No cameras yet. Add cam
 | Invalid stream URL | Tile shows “No stream”; fullscreen shows retry message |
 | Operator with no assignments | Dashboard empty state + link message |
 | Subscription inactive | Existing middleware 403 — show banner from org subscription page |
-| Delete camera with assignments | Backend soft-delete; optionally cascade-delete assignments in `deleteCamera` |
+| Delete camera with assignments | Backend soft-delete; assignments removed; restore/permanent via API |
 | Socket offline | Tile status updates via existing `camera:status:update` |
 
 ### Delete cascade (Task B2 add-on)

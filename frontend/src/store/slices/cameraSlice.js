@@ -10,6 +10,15 @@ export const fetchCameras = createAsyncThunk('cameras/fetchCameras', async (para
   }
 });
 
+export const fetchCameraUsage = createAsyncThunk('cameras/fetchUsage', async (_, { rejectWithValue }) => {
+  try {
+    const response = await api.get('/cameras/usage');
+    return response.data.data;
+  } catch (error) {
+    return rejectWithValue(error.response?.data?.message || 'Failed to fetch camera usage');
+  }
+});
+
 export const createCamera = createAsyncThunk('cameras/create', async (data, { rejectWithValue }) => {
   try {
     const response = await api.post('/cameras', data);
@@ -37,17 +46,46 @@ export const deleteCamera = createAsyncThunk('cameras/delete', async (id, { reje
   }
 });
 
+export const restoreCamera = createAsyncThunk('cameras/restore', async (id, { rejectWithValue }) => {
+  try {
+    const response = await api.put(`/cameras/${id}/restore`);
+    return response.data.data;
+  } catch (error) {
+    return rejectWithValue(error.response?.data?.message || 'Failed to restore camera');
+  }
+});
+
+export const permanentDeleteCamera = createAsyncThunk(
+  'cameras/permanentDelete',
+  async (id, { rejectWithValue }) => {
+    try {
+      await api.delete(`/cameras/${id}/permanent`);
+      return id;
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || 'Failed to permanently delete camera');
+    }
+  }
+);
+
 const cameraSlice = createSlice({
   name: 'cameras',
   initialState: {
     cameras: [],
     loading: false,
     error: null,
+    usage: {
+      used: 0,
+      maxCameras: 0,
+      canAddMore: false,
+      loading: false,
+      error: null,
+    },
   },
   reducers: {
     updateCameraStatus: (state, action) => {
       const { cameraId, status, lastActivity } = action.payload;
-      const camera = state.cameras.find((c) => c._id === cameraId);
+      const targetId = cameraId != null ? String(cameraId) : '';
+      const camera = state.cameras.find((c) => String(c._id) === targetId);
       if (camera) {
         camera.status = status;
         camera.lastActivity = lastActivity;
@@ -69,6 +107,10 @@ const cameraSlice = createSlice({
       })
       .addCase(createCamera.fulfilled, (state, action) => {
         state.cameras.push(action.payload);
+        state.usage.used += 1;
+        if (state.usage.maxCameras > 0) {
+          state.usage.canAddMore = state.usage.used < state.usage.maxCameras;
+        }
       })
       .addCase(updateCamera.fulfilled, (state, action) => {
         const index = state.cameras.findIndex((c) => c._id === action.payload._id);
@@ -78,6 +120,34 @@ const cameraSlice = createSlice({
       })
       .addCase(deleteCamera.fulfilled, (state, action) => {
         state.cameras = state.cameras.filter((c) => c._id !== action.payload);
+        state.usage.used = Math.max(0, state.usage.used - 1);
+        if (state.usage.maxCameras > 0) {
+          state.usage.canAddMore = state.usage.used < state.usage.maxCameras;
+        }
+      })
+      .addCase(restoreCamera.fulfilled, (state, action) => {
+        state.cameras.push(action.payload);
+        state.usage.used += 1;
+        if (state.usage.maxCameras > 0) {
+          state.usage.canAddMore = state.usage.used < state.usage.maxCameras;
+        }
+      })
+      .addCase(permanentDeleteCamera.fulfilled, (state, action) => {
+        state.cameras = state.cameras.filter((c) => c._id !== action.payload);
+      })
+      .addCase(fetchCameraUsage.pending, (state) => {
+        state.usage.loading = true;
+        state.usage.error = null;
+      })
+      .addCase(fetchCameraUsage.fulfilled, (state, action) => {
+        state.usage.loading = false;
+        state.usage.used = action.payload.used;
+        state.usage.maxCameras = action.payload.maxCameras;
+        state.usage.canAddMore = action.payload.canAddMore;
+      })
+      .addCase(fetchCameraUsage.rejected, (state, action) => {
+        state.usage.loading = false;
+        state.usage.error = action.payload;
       });
   },
 });

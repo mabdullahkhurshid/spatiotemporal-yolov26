@@ -1,10 +1,13 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchAlerts } from '../../store/slices/alertSlice';
 import { fetchCameras } from '../../store/slices/cameraSlice';
 import { getMe } from '../../store/slices/authSlice';
 import { Camera, AlertTriangle, Activity, Building2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import CameraGrid from '../../components/cameras/CameraGrid';
+import CameraFullscreenModal from '../../components/cameras/CameraFullscreenModal';
+import { findCameraById, isCameraOnline } from '../../utils/camera';
 
 const getOrganizationName = (user) => {
   if (!user) return null;
@@ -19,6 +22,8 @@ const OperatorDashboard = () => {
   const { user } = useSelector((state) => state.auth);
   const { cameras } = useSelector((state) => state.cameras);
   const { alerts } = useSelector((state) => state.alerts);
+  const [fullscreenCameraId, setFullscreenCameraId] = useState(null);
+  const fullscreenCamera = findCameraById(cameras, fullscreenCameraId);
 
   useEffect(() => {
     dispatch(fetchCameras());
@@ -31,7 +36,7 @@ const OperatorDashboard = () => {
     }
   }, [dispatch, user]);
 
-  const onlineCameras = cameras.filter((c) => c.status === 'online').length;
+  const onlineCameras = cameras.filter((c) => isCameraOnline(c.status)).length;
   const activeAlerts = alerts.filter((a) => a.status === 'active').length;
   const organizationName = getOrganizationName(user);
 
@@ -149,6 +154,56 @@ const OperatorDashboard = () => {
           </div>
         </div>
       )}
+
+      {/* Assigned cameras preview */}
+      {cameras.length > 0 ? (
+        <div className="card">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Your Cameras</h2>
+            {cameras.length > 4 && (
+              <Link
+                to="/operator/cameras"
+                className="text-primary-600 hover:text-primary-700 text-sm font-medium"
+              >
+                View all →
+              </Link>
+            )}
+          </div>
+          <CameraGrid
+            cameras={cameras.slice(0, 4)}
+            loading={false}
+            compact
+            columnsClassName="grid-cols-2 sm:grid-cols-4"
+            onOpenCamera={(camera) => setFullscreenCameraId(camera._id)}
+          />
+          {cameras.length <= 4 && (
+            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <Link
+                to="/operator/cameras"
+                className="text-primary-600 hover:text-primary-700 text-sm font-medium"
+              >
+                Open live cameras →
+              </Link>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="card text-center py-8">
+          <div className="mx-auto w-12 h-12 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center mb-3">
+            <Camera className="text-gray-400" size={24} />
+          </div>
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-1">No cameras assigned</h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400 max-w-md mx-auto">
+            Ask your organization admin to assign cameras so you can monitor live streams here.
+          </p>
+        </div>
+      )}
+
+      <CameraFullscreenModal
+        camera={fullscreenCamera}
+        open={Boolean(fullscreenCameraId && fullscreenCamera)}
+        onClose={() => setFullscreenCameraId(null)}
+      />
 
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

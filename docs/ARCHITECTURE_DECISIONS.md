@@ -35,3 +35,18 @@
 - Profile and portal routes allow `org_admin`, not only `customer`.
 - ADR-001 consequence “routing sends customers to landing” is superseded for account navigation by this ADR.
 - Theme preference is stored as `localStorage.theme` (`"dark"` | `"light"`) app-wide; legacy `darkMode` is migrated on read. Settings, landing, and admin headers share the same key.
+
+## ADR-004: Shared camera component layer + live usage count (2026-07-27)
+
+**Context:** Org-admin and operator camera views duplicated tile logic; subscription `camerasUsed` could drift from actual camera records.
+
+**Decision:**
+- Extract shared React components under `frontend/src/components/cameras/` (`CameraGrid`, `CameraTile`, `CameraUsageBanner`, modals/drawer).
+- Org-admin page composes management UI; operator pages reuse grid + fullscreen only (read-only).
+- `GET /api/cameras/usage` and portal account summary use live `Camera.countDocuments({ organizationId, isDeleted: false })`.
+- Operator assignment supports two entry points: operator-centric (`POST /operator-assignments`) and camera-centric (`PUT /cameras/:id/operators`).
+
+**Consequences:**
+- Plan limit enforcement is accurate in UI and API.
+- Soft-delete cascades remove `OperatorCameraAssignment` rows for the camera.
+- ONVIF type is schema-ready but disabled in UI v1 (“Coming soon”).

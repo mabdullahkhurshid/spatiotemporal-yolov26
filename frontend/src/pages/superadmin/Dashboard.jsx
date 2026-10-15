@@ -1,10 +1,12 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchAlerts, fetchAlertStats } from '../../store/slices/alertSlice';
-import { Building2, AlertTriangle, ShoppingCart, Users } from 'lucide-react';
+import { Building2, AlertTriangle, ShoppingCart } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import api from '../../services/api';
-import { useState } from 'react';
+import { getOrderStats } from '../../services/apiEndpoints';
+import toast from 'react-hot-toast';
 
 const SuperAdminDashboard = () => {
   const dispatch = useDispatch();
@@ -23,20 +25,20 @@ const SuperAdminDashboard = () => {
 
   const loadDashboardData = async () => {
     try {
-      const [orgsRes, ordersRes, alertsRes] = await Promise.all([
+      const [orgsRes, orderStatsRes, alertsRes] = await Promise.all([
         api.get('/organizations'),
-        api.get('/orders'),
+        getOrderStats(),
         api.get('/alerts'),
       ]);
 
       setDashboardStats({
         organizations: orgsRes.data.count || 0,
-        orders: ordersRes.data.count || 0,
+        orders: orderStatsRes.data.data?.total || 0,
         totalAlerts: alertsRes.data.count || 0,
         activeAlerts: alertsRes.data.data?.filter((a) => a.status === 'active').length || 0,
       });
     } catch (error) {
-      console.error('Failed to load dashboard data:', error);
+      toast.error(error.response?.data?.message || 'Failed to load dashboard data');
     }
   };
 
@@ -48,10 +50,11 @@ const SuperAdminDashboard = () => {
       color: 'bg-blue-500',
     },
     {
-      title: 'Pending Orders',
+      title: 'Total Orders',
       value: dashboardStats.orders,
       icon: ShoppingCart,
-      color: 'bg-yellow-500',
+      color: 'bg-emerald-500',
+      link: '/orders',
     },
     {
       title: 'Total Alerts',
@@ -78,17 +81,29 @@ const SuperAdminDashboard = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {statCards.map((stat, index) => {
           const Icon = stat.icon;
-          return (
-            <div key={index} className="card">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{stat.title}</p>
-                  <p className="text-3xl font-bold text-gray-900 dark:text-white mt-2">{stat.value}</p>
-                </div>
-                <div className={`${stat.color} p-3 rounded-lg`}>
-                  <Icon className="text-white" size={24} />
-                </div>
+          const cardContent = (
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{stat.title}</p>
+                <p className="text-3xl font-bold text-gray-900 dark:text-white mt-2">{stat.value}</p>
               </div>
+              <div className={`${stat.color} p-3 rounded-lg`}>
+                <Icon className="text-white" size={24} />
+              </div>
+            </div>
+          );
+
+          return stat.link ? (
+            <Link
+              key={index}
+              to={stat.link}
+              className="card block hover:ring-2 hover:ring-emerald-500/40 transition-shadow"
+            >
+              {cardContent}
+            </Link>
+          ) : (
+            <div key={index} className="card">
+              {cardContent}
             </div>
           );
         })}

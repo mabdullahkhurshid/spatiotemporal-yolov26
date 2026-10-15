@@ -2,6 +2,7 @@ const User = require('../models/User');
 const Organization = require('../models/Organization');
 const Subscription = require('../models/Subscription');
 const Order = require('../models/Order');
+const Camera = require('../models/Camera');
 const OperatorCameraAssignment = require('../models/OperatorCameraAssignment');
 const Notification = require('../models/Notification');
 const AuditLog = require('../models/AuditLog');
@@ -120,8 +121,14 @@ exports.getAccountSummary = async (req, res, next) => {
       : null;
 
     summary.orders = orders;
+
+    const camerasUsed = await Camera.countDocuments({
+      organizationId: user.organizationId,
+      isDeleted: false,
+    });
+
     summary.usage = {
-      camerasUsed: subscription?.camerasUsed ?? 0,
+      camerasUsed,
       operatorsUsed: subscription?.operatorsUsed ?? 0,
       maxCameras: organization.maxCameras ?? plan?.maxCameras ?? 0,
       maxOperators: organization.maxOperators ?? plan?.maxOperators ?? 0,

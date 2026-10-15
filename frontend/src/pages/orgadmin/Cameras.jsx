@@ -1,115 +1,180 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { fetchCameras } from '../../store/slices/cameraSlice';
-import { useFireSmokeDetection } from '../../hooks/useFireSmokeDetection';
-
-const CameraTile = ({ camera }) => {
-  const videoRef = useRef(null);
-  const [detectionEnabled, setDetectionEnabled] = useState(true);
-  const { modelLoaded, lastPrediction, isRunning } = useFireSmokeDetection({
-    videoRef,
-    cameraId: camera._id,
-    enabled: detectionEnabled,
-  });
-
-  return (
-    <div className="card flex flex-col space-y-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-            {camera.label || camera.name}
-          </h3>
-          <p className="text-sm text-gray-600 dark:text-gray-400">{camera.location}</p>
-        </div>
-        <div className="flex flex-col items-end space-y-2">
-          <span
-            className={`px-2 py-1 rounded text-xs font-medium ${
-              camera.status === 'ONLINE' || camera.status === 'online'
-                ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200'
-                : 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200'
-            }`}
-          >
-            {camera.status?.toUpperCase()}
-          </span>
-          <label className="flex items-center space-x-2 text-xs text-gray-700 dark:text-gray-300">
-            <input
-              type="checkbox"
-              checked={detectionEnabled}
-              onChange={(e) => setDetectionEnabled(e.target.checked)}
-            />
-            <span>AI Detection</span>
-          </label>
-        </div>
-      </div>
-
-      <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden">
-        {camera.streamUrl ? (
-          <video
-            ref={videoRef}
-            src={camera.streamUrl}
-            className="w-full h-full object-cover"
-            autoPlay
-            muted
-            playsInline
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm">
-            No stream URL configured
-          </div>
-        )}
-        {lastPrediction && (
-          <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-3 py-1 rounded">
-            Fire: {lastPrediction.fireConfidence.toFixed(1)}% | Smoke:{' '}
-            {lastPrediction.smokeConfidence.toFixed(1)}%
-          </div>
-        )}
-      </div>
-
-      <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-400">
-        <span>
-          Model: {modelLoaded ? 'Loaded' : 'Loading...'} | Inference:{' '}
-          {detectionEnabled ? (isRunning ? 'Running' : 'Idle') : 'Disabled'}
-        </span>
-        {camera.metadata?.fps && <span>FPS: {camera.metadata.fps}</span>}
-      </div>
-    </div>
-  );
-};
+import { Camera, Plus } from 'lucide-react';
+import toast from 'react-hot-toast';
+import {
+  fetchCameras,
+  fetchCameraUsage,
+  createCamera,
+  updateCamera,
+  deleteCamera,
+} from '../../store/slices/cameraSlice';
+import CameraUsageBanner from '../../components/cameras/CameraUsageBanner';
+import CameraGrid from '../../components/cameras/CameraGrid';
+import CameraFormModal from '../../components/cameras/CameraFormModal';
+import CameraFullscreenModal from '../../components/cameras/CameraFullscreenModal';
+import CameraSettingsDrawer from '../../components/cameras/CameraSettingsDrawer';
+import { findCameraById } from '../../utils/camera';
 
 const OrgAdminCameras = () => {
   const dispatch = useDispatch();
-  const { cameras, loading } = useSelector((state) => state.cameras);
+  const { cameras, loading, usage } = useSelector((state) => state.cameras);
+
+  const [formModal, setFormModal] = useState({ open: false, mode: 'add', camera: null });
+  const [fullscreenCameraId, setFullscreenCameraId] = useState(null);
+  const [settingsCameraId, setSettingsCameraId] = useState(null);
+  const [formSubmitting, setFormSubmitting] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const fullscreenCamera = findCameraById(cameras, fullscreenCameraId);
+  const settingsCamera = findCameraById(cameras, settingsCameraId);
 
   useEffect(() => {
     dispatch(fetchCameras());
+    dispatch(fetchCameraUsage());
   }, [dispatch]);
+
+  const openAddForm = () => {
+    setFormError('');
+    setFormModal({ open: true, mode: 'add', camera: null });
+  };
+
+  const closeFormModal = () => {
+    setFormModal({ open: false, mode: 'add', camera: null });
+    setFormError('');
+  };
+
+  const handleFormSubmit = async (payload) => {
+    setFormSubmitting(true);
+    setFormError('');
+    try {
+      if (formModal.mode === 'edit' && formModal.camera) {
+        await dispatch(updateCamera({ id: formModal.camera._id, data: payload })).unwrap();
+        toast.success('Camera updated');
+      } else {
+        await dispatch(createCamera(payload)).unwrap();
+        toast.success('Camera added');
+        dispatch(fetchCameraUsage());
+      }
+      closeFormModal();
+    } catch (error) {
+      const message = typeof error === 'string' ? error : 'Failed to save camera';
+      setFormError(message);
+      toast.error(message);
+    } finally {
+      setFormSubmitting(false);
+    }
+  };
+
+  const handleOpenCamera = (camera) => {
+    setFullscreenCameraId(camera._id);
+  };
+
+  const handleOpenSettings = (camera) => {
+    setFullscreenCameraId(null);
+    setSettingsCameraId(camera._id);
+  };
+
+  const handleSettingsSave = async (payload) => {
+    if (!settingsCameraId) return;
+    setSettingsSaving(true);
+    try {
+      const updated = await dispatch(
+        updateCamera({ id: settingsCameraId, data: payload })
+      ).unwrap();
+      toast.success('Settings saved');
+      setSettingsCameraId(updated._id);
+    } catch (error) {
+      toast.error(typeof error === 'string' ? error : 'Failed to save settings');
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
+  const handleDeleteCamera = async () => {
+    if (!settingsCameraId) return;
+    setDeleting(true);
+    try {
+      await dispatch(deleteCamera(settingsCameraId)).unwrap();
+      toast.success('Camera deleted');
+      setSettingsCameraId(null);
+      setFullscreenCameraId(null);
+      dispatch(fetchCameraUsage());
+    } catch (error) {
+      toast.error(typeof error === 'string' ? error : 'Failed to delete camera');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const emptyState = (
+    <div className="card text-center py-12">
+      <div className="mx-auto w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center mb-4">
+        <Camera className="text-gray-400" size={32} />
+      </div>
+      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No cameras yet</h3>
+      <p className="text-gray-600 dark:text-gray-400 mb-6 max-w-sm mx-auto">
+        Add your first camera to start monitoring live streams and AI fire/smoke detection.
+      </p>
+      {(!usage.loading && usage.canAddMore) && (
+        <button type="button" onClick={openAddForm} className="btn-primary inline-flex items-center gap-2">
+          <Plus size={18} />
+          Add your first camera
+        </button>
+      )}
+    </div>
+  );
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Cameras</h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-2">
-          Monitor live streams and AI-based fire/smoke detection for your organization.
-        </p>
-      </div>
+      <CameraUsageBanner
+        subtitle="Monitor live streams and AI-based fire/smoke detection for your organization."
+        used={usage.used}
+        maxCameras={usage.maxCameras}
+        canAdd={usage.canAddMore}
+        loading={usage.loading}
+        onAddClick={openAddForm}
+      />
 
-      {loading ? (
-        <div className="card">
-          <p className="text-gray-600 dark:text-gray-400">Loading cameras...</p>
-        </div>
-      ) : cameras.length === 0 ? (
-        <div className="card">
-          <p className="text-gray-600 dark:text-gray-400">
-            No cameras found. Please add cameras from the admin panel.
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          {cameras.map((camera) => (
-            <CameraTile key={camera._id} camera={camera} />
-          ))}
-        </div>
-      )}
+      <CameraGrid
+        cameras={cameras}
+        loading={loading}
+        compact
+        showSettings
+        onOpenCamera={handleOpenCamera}
+        onSettingsCamera={handleOpenSettings}
+        emptyState={emptyState}
+      />
+
+      <CameraFormModal
+        open={formModal.open}
+        mode={formModal.mode}
+        initialValues={formModal.camera}
+        onSubmit={handleFormSubmit}
+        onClose={closeFormModal}
+        submitting={formSubmitting}
+        error={formError}
+      />
+
+      <CameraFullscreenModal
+        camera={fullscreenCamera}
+        open={Boolean(fullscreenCameraId && fullscreenCamera)}
+        onClose={() => setFullscreenCameraId(null)}
+        onOpenSettings={handleOpenSettings}
+        showSettingsButton
+      />
+
+      <CameraSettingsDrawer
+        camera={settingsCamera}
+        open={Boolean(settingsCameraId && settingsCamera)}
+        onClose={() => setSettingsCameraId(null)}
+        onSave={handleSettingsSave}
+        onDelete={handleDeleteCamera}
+        saving={settingsSaving}
+        deleting={deleting}
+      />
     </div>
   );
 };

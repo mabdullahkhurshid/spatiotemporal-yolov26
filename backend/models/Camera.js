@@ -13,12 +13,20 @@ const cameraSchema = new mongoose.Schema(
     },
     ipAddress: {
       type: String,
-      required: [true, 'IP address is required'],
       trim: true,
       match: [
         /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/,
         'Please provide a valid IP address',
       ],
+    },
+    cameraType: {
+      type: String,
+      enum: ['ip_rtsp', 'http_mjpeg', 'onvif'],
+      default: 'ip_rtsp',
+    },
+    displayNumber: {
+      type: String,
+      trim: true,
     },
     streamUrl: {
       type: String,
@@ -67,6 +75,10 @@ const cameraSchema = new mongoose.Schema(
       resolution: { type: String },
       fps: { type: Number },
     },
+    settings: {
+      detectionEnabled: { type: Boolean, default: true },
+      notes: { type: String, trim: true },
+    },
   },
   {
     timestamps: true,
@@ -83,6 +95,11 @@ cameraSchema.index({ lastHeartbeat: 1 });
 // Soft delete
 cameraSchema.methods.softDelete = function () {
   this.isDeleted = true;
+  return this.save();
+};
+
+cameraSchema.methods.restore = function () {
+  this.isDeleted = false;
   return this.save();
 };
 

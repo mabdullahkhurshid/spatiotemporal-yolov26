@@ -1,88 +1,32 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
+import { Camera } from 'lucide-react';
 import { fetchCameras } from '../../store/slices/cameraSlice';
-import { useFireSmokeDetection } from '../../hooks/useFireSmokeDetection';
-
-const OperatorCameraTile = ({ camera }) => {
-  const videoRef = useRef(null);
-  const [detectionEnabled, setDetectionEnabled] = useState(true);
-  const { modelLoaded, lastPrediction, isRunning } = useFireSmokeDetection({
-    videoRef,
-    cameraId: camera._id,
-    enabled: detectionEnabled,
-  });
-
-  return (
-    <div className="card flex flex-col space-y-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-            {camera.label || camera.name}
-          </h3>
-          <p className="text-sm text-gray-600 dark:text-gray-400">{camera.location}</p>
-        </div>
-        <div className="flex flex-col items-end space-y-2">
-          <span
-            className={`px-2 py-1 rounded text-xs font-medium ${
-              camera.status === 'ONLINE' || camera.status === 'online'
-                ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200'
-                : 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200'
-            }`}
-          >
-            {camera.status?.toUpperCase()}
-          </span>
-          <label className="flex items-center space-x-2 text-xs text-gray-700 dark:text-gray-300">
-            <input
-              type="checkbox"
-              checked={detectionEnabled}
-              onChange={(e) => setDetectionEnabled(e.target.checked)}
-            />
-            <span>AI Detection</span>
-          </label>
-        </div>
-      </div>
-
-      <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden">
-        {camera.streamUrl ? (
-          <video
-            ref={videoRef}
-            src={camera.streamUrl}
-            className="w-full h-full object-cover"
-            autoPlay
-            muted
-            playsInline
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm">
-            No stream URL configured
-          </div>
-        )}
-        {lastPrediction && (
-          <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-3 py-1 rounded">
-            Fire: {lastPrediction.fireConfidence.toFixed(1)}% | Smoke:{' '}
-            {lastPrediction.smokeConfidence.toFixed(1)}%
-          </div>
-        )}
-      </div>
-
-      <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-400">
-        <span>
-          Model: {modelLoaded ? 'Loaded' : 'Loading...'} | Inference:{' '}
-          {detectionEnabled ? (isRunning ? 'Running' : 'Idle') : 'Disabled'}
-        </span>
-        {camera.metadata?.fps && <span>FPS: {camera.metadata.fps}</span>}
-      </div>
-    </div>
-  );
-};
+import CameraGrid from '../../components/cameras/CameraGrid';
+import CameraFullscreenModal from '../../components/cameras/CameraFullscreenModal';
+import { findCameraById } from '../../utils/camera';
 
 const OperatorCameras = () => {
   const dispatch = useDispatch();
   const { cameras, loading } = useSelector((state) => state.cameras);
+  const [fullscreenCameraId, setFullscreenCameraId] = useState(null);
+  const fullscreenCamera = findCameraById(cameras, fullscreenCameraId);
 
   useEffect(() => {
     dispatch(fetchCameras());
   }, [dispatch]);
+
+  const emptyState = (
+    <div className="card text-center py-12">
+      <div className="mx-auto w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center mb-4">
+        <Camera className="text-gray-400" size={32} />
+      </div>
+      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No cameras assigned</h3>
+      <p className="text-gray-600 dark:text-gray-400 max-w-sm mx-auto">
+        Your organization admin has not assigned any cameras to you yet. Contact them to get access.
+      </p>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -93,23 +37,19 @@ const OperatorCameras = () => {
         </p>
       </div>
 
-      {loading ? (
-        <div className="card">
-          <p className="text-gray-600 dark:text-gray-400">Loading cameras...</p>
-        </div>
-      ) : cameras.length === 0 ? (
-        <div className="card">
-          <p className="text-gray-600 dark:text-gray-400">
-            No cameras assigned. Please contact your organization admin.
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          {cameras.map((camera) => (
-            <OperatorCameraTile key={camera._id} camera={camera} />
-          ))}
-        </div>
-      )}
+      <CameraGrid
+        cameras={cameras}
+        loading={loading}
+        compact
+        onOpenCamera={(camera) => setFullscreenCameraId(camera._id)}
+        emptyState={emptyState}
+      />
+
+      <CameraFullscreenModal
+        camera={fullscreenCamera}
+        open={Boolean(fullscreenCameraId && fullscreenCamera)}
+        onClose={() => setFullscreenCameraId(null)}
+      />
     </div>
   );
 };

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchAlerts, fetchAlertStats } from '../../store/slices/alertSlice';
 import { fetchCameras } from '../../store/slices/cameraSlice';
+import { isCameraOnline } from '../../utils/camera';
 import { Camera, AlertTriangle, Users, Activity } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -17,7 +18,7 @@ const OrgAdminDashboard = () => {
     dispatch(fetchAlerts({ limit: 10 }));
   }, [dispatch]);
 
-  const onlineCameras = cameras.filter((c) => c.status === 'online').length;
+  const onlineCameras = cameras.filter((c) => isCameraOnline(c.status)).length;
   const activeAlerts = alerts.filter((a) => a.status === 'active').length;
 
   const statCards = [

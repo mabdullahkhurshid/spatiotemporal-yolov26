@@ -63,6 +63,7 @@ app.use('/api/users', require('./routes/users'));
 app.use('/api/organizations', require('./routes/organizations'));
 app.use('/api/subscription-plans', require('./routes/subscriptionPlans'));
 app.use('/api/subscriptions', require('./routes/subscriptions'));
+app.use('/api/orders', require('./routes/orders'));
 app.use('/api/cameras', require('./routes/cameras'));
 app.use('/api/operator-assignments', require('./routes/operatorAssignments'));
 app.use('/api/alerts', require('./routes/alerts'));

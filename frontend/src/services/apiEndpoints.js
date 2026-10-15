@@ -1,5 +1,12 @@
 import api from './api';
 
+// Orders (Super Admin)
+export const getOrders = (params) => api.get('/orders', { params });
+export const getOrder = (id) => api.get(`/orders/${id}`);
+export const getOrderStats = () => api.get('/orders/stats');
+export const updateOrder = (id, data) => api.put(`/orders/${id}`, data);
+export const deleteOrder = (id) => api.delete(`/orders/${id}`);
+
 // Organizations (Super Admin)
 export const getOrganizations = (params) => api.get('/organizations', { params });
 export const getOrganization = (id) => api.get(`/organizations/${id}`);
@@ -39,3 +46,11 @@ export const assignCamerasToOperator = (operatorId, cameraIds, replace = true) =
   api.post('/operator-assignments', { operatorId, cameraIds, replace });
 export const removeOperatorAssignment = (assignmentId) => api.delete(`/operator-assignments/${assignmentId}`);
 export const getMyAssignedCameras = () => api.get('/operator-assignments/my-cameras');
+
+// Cameras
+export const getCameraUsage = () => api.get('/cameras/usage');
+export const getDeletedCameras = (params) => api.get('/cameras/deleted', { params });
+export const assignOperatorsToCamera = (cameraId, operatorIds, replace = true) =>
+  api.put(`/cameras/${cameraId}/operators`, { operatorIds, replace });
+export const restoreCamera = (id) => api.put(`/cameras/${id}/restore`);
+export const permanentDeleteCamera = (id) => api.delete(`/cameras/${id}/permanent`);
