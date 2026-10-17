@@ -79,6 +79,27 @@ const cameraSchema = new mongoose.Schema(
       detectionEnabled: { type: Boolean, default: true },
       notes: { type: String, trim: true },
     },
+    inference: {
+      lastDetectionAt: { type: Date },
+      streamStatus: { type: String, enum: ['ok', 'degraded', 'idle'], default: 'idle' },
+      status: { type: String, enum: ['ok', 'degraded', 'offline', 'idle'], default: 'idle' },
+      fireConfidence: { type: Number, default: 0 },
+      smokeConfidence: { type: Number, default: 0 },
+      detectionFrequencyPerMin: { type: Number, default: 0 },
+      estimatedSpreadRate: { type: Number, default: 0 },
+      incidentStartedAt: { type: Date },
+      activeIncidentId: { type: mongoose.Schema.Types.ObjectId, ref: 'FireIncident' },
+      boxes: [
+        {
+          className: String,
+          confidence: Number,
+          x: Number,
+          y: Number,
+          w: Number,
+          h: Number,
+        },
+      ],
+    },
   },
   {
     timestamps: true,

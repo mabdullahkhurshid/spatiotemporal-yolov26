@@ -30,3 +30,15 @@ coverage/
 *.pem
 *.key
 .cache/
+
+# ML weights & inference artifacts
+python-services/inference/weights/*.pt
+python-services/inference/weights/*.onnx
+python-services/inference/.venv/
+
+# Alert snapshots
+uploads/
+
+# Python
+__pycache__/
+*.pyc

@@ -13,7 +13,6 @@ import {
   CreditCard,
   UserCog,
   LogOut,
-  Menu,
   X,
   UserCircle,
 } from 'lucide-react';
@@ -57,17 +56,6 @@ const Sidebar = ({ role, isOpen, setIsOpen }) => {
 
   return (
     <>
-      {/* Mobile menu button */}
-      <div className="lg:hidden fixed top-4 left-4 z-50">
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          className="p-2 rounded-lg bg-gray-800 text-white"
-        >
-          {isOpen ? <X size={24} /> : <Menu size={24} />}
-        </button>
-      </div>
-
-      {/* Sidebar */}
       <aside
         className={`fixed lg:static inset-y-0 left-0 z-40 w-64 bg-gray-800 dark:bg-gray-900 text-white transform ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
@@ -75,9 +63,19 @@ const Sidebar = ({ role, isOpen, setIsOpen }) => {
       >
         <div className="flex flex-col h-full">
           {/* Logo */}
-          <div className="p-6 border-b border-gray-700">
-            <h1 className="text-xl font-bold text-primary-500">🔥 Fire Detection</h1>
-            <p className="text-sm text-gray-400 mt-1">AI Monitoring System</p>
+          <div className="p-6 border-b border-gray-700 flex items-start justify-between gap-3">
+            <div>
+              <h1 className="text-xl font-bold text-primary-500">🔥 Fire Detection</h1>
+              <p className="text-sm text-gray-400 mt-1">AI Monitoring System</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsOpen(false)}
+              className="lg:hidden p-2 rounded-lg text-gray-300 hover:bg-gray-700 hover:text-white"
+              aria-label="Close navigation menu"
+            >
+              <X size={20} />
+            </button>
           </div>
 
           {/* Navigation */}

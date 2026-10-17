@@ -38,9 +38,7 @@ export const isMarketingViewAllowed = () =>
 export const clearMarketingView = () => sessionStorage.removeItem(MARKETING_VIEW_KEY);
 
 export const getPostAuthRedirectPath = (role) => {
-  const pendingPlanId = getPendingPlanId();
-  if (pendingPlanId && isPortalUser(role)) {
-    return `/customer/subscribe/${encodeURIComponent(pendingPlanId)}`;
-  }
+  // Leave pendingPlanId in session. The customer dashboard applies renewal
+  // eligibility before opening checkout, including for an active term.
   return getDashboardPathForRole(role);
 };

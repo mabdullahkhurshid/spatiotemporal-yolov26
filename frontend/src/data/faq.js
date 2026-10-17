@@ -31,13 +31,13 @@ export const FAQ_CATEGORIES = [
         id: 'one-org',
         question: 'Can I create multiple organizations with one email?',
         answer:
-          'No. Each email account can own one organization. If you already have an active subscription, checkout is blocked to prevent duplicate organizations.',
+          'No. Each email account can own one organization. After a subscription expires, renewal updates that same organization in place. Checkout is blocked while a term is still active.',
       },
       {
         id: 'expiry',
         question: 'What happens when my subscription expires?',
         answer:
-          'Your portal dashboard and subscription page show expiry warnings. Contact support or review available plans to renew. A suspended organization may restrict org dashboard access until resolved.',
+          'Open Plans and complete checkout to renew. Cameras and settings stay in place when you renew the same plan or a larger one. A smaller plan is blocked until you remove cameras, and operators if needed, so usage fits the new limits. You cannot change plans before the current term ends. A suspended organization cannot renew through checkout — contact support.',
       },
       {
         id: 'payment',

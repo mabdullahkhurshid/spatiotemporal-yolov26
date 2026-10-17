@@ -36,7 +36,7 @@ const CustomerPageShell = ({
             <CustomerProfileMenu
               user={user}
               onScrollToContact={() => navigate("/#contact")}
-              onPurchasePlan={() => navigate("/subscribe")}
+              onPurchasePlan={() => navigate("/customer/plans")}
             />
           )}
         </div>

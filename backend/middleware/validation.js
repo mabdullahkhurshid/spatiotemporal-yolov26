@@ -186,6 +186,7 @@ exports.validateAlert = [
     .isFloat({ min: 0, max: 100 })
     .withMessage("Smoke confidence must be between 0 and 100"),
   body("intensityLevel")
+    .optional()
     .isIn(["low", "medium", "high", "critical"])
     .withMessage("Invalid intensity level"),
 ];

@@ -1,11 +1,11 @@
 # Project Audit Summary
 
 **Project:** AI-Based Fire & Smoke Detection / Surveillance SaaS Platform
-**Stack:** MERN (MongoDB, Express, React, Node.js) + Socket.io + TensorFlow.js
-**Audit type:** Read-only static analysis of the current repository state
-**Scope:** `backend/`, `frontend/`, `ml/`, root config files
+**Stack:** MERN (MongoDB, Express, React, Node.js) + Socket.io + Python YOLOv26 (ONNX inference sidecar)
+**Audit type:** Read-only static analysis (partially superseded — see ADR-005, `docs/CURRENT_ITERATION.md`)
+**Scope:** `backend/`, `frontend/`, `python-services/inference/`, root config files
 
-> This document is a factual snapshot of what exists in the codebase today. No code was changed to produce it.
+> **Note (2026-10-17):** Some narrative below is from an earlier audit pass. Current runtime AI is **YOLOv26 ONNX** in `python-services/inference/`; the React app visualizes server detections only.
 
 ---
 
@@ -27,7 +27,7 @@ Starter/
 ├── frontend/                   # React 18 + Vite SPA
 │   └── src/
 │       ├── components/         # Sidebar, Header, ErrorBoundary
-│       ├── hooks/useFireSmokeDetection.js   # TF.js browser inference
+│       ├── hooks/useLiveDetection.js        # Server YOLOv26 overlay (Socket.io)
 │       ├── layouts/             # SuperAdminLayout, OrgAdminLayout, OperatorLayout
 │       ├── pages/                # auth/, public/, superadmin/, orgadmin/, operator/
 │       ├── services/             # api.js (axios), apiEndpoints.js, publicApi.js, socketService.js
@@ -35,9 +35,7 @@ Starter/
 │       ├── utils/roleRoutes.js
 │       ├── App.jsx               # Route table + role-based guards
 │       └── main.jsx
-├── ml/                          # Python training pipeline (offline, not wired into backend)
-│   ├── train_fire_smoke_model.py
-│   └── convert_to_tfjs.md
+├── python-services/inference/   # YOLOv26 ONNX CPU worker → backend ingest
 ├── docs/EMAIL_SETUP.md
 ├── package.json / frontend/package.json   # npm workspaces (root = backend deps)
 ├── docker-compose.yml, Dockerfile, nginx.conf
@@ -214,16 +212,15 @@ Enforcement mechanism: layered Express middleware (`protect` → `requireActiveO
 - **PendingVerification.jsx** — real-time approval flow described in §4.
 - **SuperAdminSubscriptionPlans.jsx** — full table UI: create/edit modals (price, currency, duration, billing cycle, limits, badges), activate/deactivate/delete/assign actions, org-usage column.
 - **OrgAdminOperators.jsx** — add operator, delete operator, assign/replace camera access per operator.
-- **OrgAdminCameras.jsx / OperatorCameras.jsx** — live camera tiles wired to `useFireSmokeDetection` (TensorFlow.js in-browser inference posting to `/api/alerts`).
+- **OrgAdminCameras.jsx / OperatorCameras.jsx** — shared camera grid; fullscreen modal uses `useLiveDetection` + Socket.io `detection:live` overlays from the Python YOLOv26 worker.
+- **OrgAdminReports.jsx** — incident stats and charts from `/api/incidents` and `/api/incidents/stats`.
+- **SuperAdminOrders.jsx** — order management UI backed by `/api/orders`.
 - **Dashboards** (Super Admin / Org Admin / Operator) — stat cards + Recharts visualizations, recent-alerts tables.
-- **Stub pages** (explicit "Implementation pending" placeholders):
-  - `frontend/src/pages/orgadmin/Reports.jsx`
-  - `frontend/src/pages/superadmin/Orders.jsx`
 
 ### 6.5 Machine Learning Integration
 
-- `useFireSmokeDetection.js` loads a TensorFlow.js graph model client-side (`/models/fire_smoke_tfjs/model.json`), runs inference on a hidden `<video>` element at a configurable interval, applies a temporal window + consecutive-frame + cooldown gating strategy before POSTing to `/api/alerts`.
-- `ml/train_fire_smoke_model.py` and `ml/convert_to_tfjs.md` are offline/manual training & conversion assets — they are not invoked by any backend or CI process; the trained model must be manually placed under `frontend/public/models/`.
+- **`python-services/inference/`** — YOLOv26 ONNX (`best.onnx`) on CPU via ONNX Runtime; polls enabled cameras, posts to `POST /api/internal/inference/ingest`.
+- **Frontend** — visualizes server detections only (`DetectionOverlayCanvas`, `useLiveDetection`); no in-browser model weights.
 
 ---
 
@@ -241,7 +238,7 @@ Enforcement mechanism: layered Express middleware (`protect` → `requireActiveO
 - Contact Us: public form → validation → `Contact` collection persistence → best-effort business-email notification → toast feedback, loading state, duplicate-submit guard on the frontend.
 - Public landing page with dynamic, active-only, sorted subscription plan display.
 - Role-based dashboards for all three roles with charts (Recharts) and recent-activity tables.
-- Client-side TensorFlow.js fire/smoke inference pipeline feeding the alert API.
+- Python YOLOv26 inference sidecar feeding alerts, incidents, and live overlays.
 - Audit logging model and a few explicit `AuditLog.create(...)` calls in `authController` (login/register/logout/password reset) and `userController` (operator hard-delete).
 - Seed/admin scripts: `createSuperAdmin.js`, `seedSubscriptionPlans.js` (now includes price/currency/duration/billing defaults), `clearOperatorsAndOrgAdmins.js`.
 
@@ -262,7 +259,7 @@ Enforcement mechanism: layered Express middleware (`protect` → `requireActiveO
 | **File/image upload** | `Alert.alertImage` / `frameSnapshotURL` and `Organization.logo` are plain string fields; there is no multer/S3/cloud-storage integration found — clients must supply an already-hosted URL. |
 | **Rate limiting granularity** | A single global rate limiter is applied to all of `/api/*`; there is no stricter limiter specifically on auth endpoints (login/register/forgot-password) or the public contact form beyond the global 100 req/15 min default. |
 | **Automated tests** | No test directories, test runner config, or CI pipeline (e.g., Jest/Mocha/Playwright) were found in either `backend/` or `frontend/`. |
-| **ML pipeline integration** | `ml/train_fire_smoke_model.py` is a standalone training script; there's no automated conversion/deployment path from a trained model into `frontend/public/models/` — this is a manual step per `ml/convert_to_tfjs.md`. |
+| **ML weights deployment** | Place exported `best.onnx` under `python-services/inference/weights/`; training is external (Colab/Roboflow YOLOv26). |
 | **Payment gateway** | Subscription "checkout" is a manual/simulated flow (`Order` created directly with `status: 'approved'`); no real payment provider (Stripe/PayPal/etc.) integration exists. |
 
 ---

@@ -1,382 +1,131 @@
 # Current Iteration
 
-**Iteration:** Super Admin Orders  
-**Started:** 2026-07-27  
-**Status:** In progress — Phase 11.3 complete
+**Iteration:** 13 — Subscription renewal & re-subscribe  
+**Started:** 2026-10-16  
+**Status:** Complete — Phase 13.6 signed off 2026-10-17
 
 ## Current Step
 
-**Phase 11.3 complete** — dashboard stat fix, Orders summary strip, error toasts; next: Phase 11.4 (QA & regression)
+Iteration 13 is complete. Wait for the next instruction before starting new work.
 
-## Phase 11 Overview
+### Documentation alignment (2026-10-17)
 
-| Phase | Name | Status |
-|-------|------|--------|
-| **11.1** | Backend B1–B5 (list, detail, stats, routes) | **Complete** |
-| **11.2** | Frontend F1–F4 (API helpers, Orders page, detail drawer) | **Complete** |
-| **11.3** | Frontend F5–F7 (dashboard stat fix, polish) | **Complete** |
-| **11.4** | QA & regression | Pending |
+- Removed legacy **CNN / TensorFlow.js** copy from README, landing page, ADRs, and audit docs; product AI is **YOLOv26 ONNX** only.
+- Removed unused root dependency `@tensorflow/tfjs` (`npm install` refreshed lockfile).
+- Verification: `npm run build` (frontend) exit 0; `subscriptionTerm` + `checkoutMode` node smoke checks; Python `compileall` for inference app.
 
----
-
-## Completed — Phase 11.3
-
-- [x] Task F5: `Dashboard.jsx` — "Total Orders" card uses `getOrderStats()`, emerald styling, links to `/orders`
-- [x] Task F6: `Orders.jsx` — summary strip (total, approved, this month) from stats endpoint
-- [x] Task F7: Dashboard fetch errors show toast (matches Organizations pattern); Orders stats errors toast on failure
-
-## Post–Phase 11.3 — Super Admin order edit
-
-- [x] `PUT /api/orders/:id` — super_admin can update status, plan, amount, notes, payment ID
-- [x] Status → `approved` sets `approvedBy` / `approvedAt`; other statuses clear them
-- [x] `Orders.jsx` — Edit action in table + detail drawer; modal form with validation toasts
-- [x] `validateUpdateOrder` middleware + `updateOrder` API helper
-
-## Phase 11.3 Validation
-
-- [x] `npm run build` (frontend) succeeded — exit 0, built in ~15s
-- [x] Backend order modules load without errors (including `updateOrder` route)
-
-## Phase 11.3 Change Report
-
-### Modified files
-
-- `frontend/src/pages/superadmin/Dashboard.jsx` — order stat via `getOrderStats`, renamed card, clickable link
-- `frontend/src/pages/superadmin/Orders.jsx` — summary strip + stats refresh on reload; super admin edit modal
-- `backend/controllers/orderController.js` — `updateOrder`, shared `fetchFormattedOrder`
-- `backend/routes/orders.js` — `PUT /:id` with validation
-- `backend/middleware/validation.js` — `validateUpdateOrder`
-- `frontend/src/services/apiEndpoints.js` — `updateOrder` helper
-
----
-
-## Completed — Phase 11.2
-
-- [x] Task F1: `apiEndpoints.js` — `getOrders`, `getOrder`, `getOrderStats`
-- [x] Task F2: Rebuilt `Orders.jsx` — filterable table (status, plan, date preset, org search), pagination, loading skeleton, empty state
-- [x] Task F3: Read-only detail drawer — order fields, notes, org context, org admin, link to organizations
-- [x] Task F4: Reused `accountFormatting.js` for dates, currency, status badges (no duplicate formatters)
-
-## Phase 11.2 Validation
-
-- [x] `npm run build` (frontend) succeeded — exit 0, built in ~15s
-
-## Phase 11.2 Change Report
-
-### Modified files
-
-- `frontend/src/services/apiEndpoints.js` — order API helpers
-- `frontend/src/pages/superadmin/Orders.jsx` — full read-only audit log page (replaces stub)
-
----
-
-## Completed — Phase 11.1
-
-- [x] Task B1: `GET /api/orders` — filters (status, org, plan, date range), pagination, populate org + plan display name
-- [x] Task B2: `GET /api/orders/:id` — detail with org admin context
-- [x] Task B3: `GET /api/orders/stats` — `{ total, approved, thisMonth }`
-- [x] Task B4: `routes/orders.js` + mount at `/api/orders` in `server.js` (super_admin only)
-- [x] Task B5: Backend smoke test — order controller and routes load without errors
-
-## Phase 11.1 Validation
-
-- [x] Backend modules load without errors — `orderController`, `routes/orders` OK
-
-## Phase 11.1 Change Report
-
-### New files
-
-- `backend/controllers/orderController.js` — `getOrders`, `getOrder`, `getOrderStats`
-- `backend/routes/orders.js` — super_admin read-only routes (`/stats` before `/:id`)
-
-### Modified files
-
-- `backend/server.js` — register `/api/orders` router
-
----
-
-## Previous Iteration — Camera Management (Phase 10)
-
-**Status:** Complete (Phase 10.5)
-
-## Current Step (Phase 10 — closed)
-
-**Phase 10.5 complete** — iteration complete
-
-## Phase 10 Overview
+## Phase 13 Overview
 
 | Phase | Name | Status |
 |-------|------|--------|
-| **10.1** | Backend B1–B5 | **Complete** |
-| **10.2** | Frontend F1–F3 (API, usage banner, tile, grid) | **Complete** |
-| **10.3** | Frontend F4–F7 (form, fullscreen, settings, org-admin page) | **Complete** |
-| **10.4** | Frontend F8–F9 (operator views, Operators polish) | **Complete** |
-| **10.5** | QA & regression | **Complete** |
+| **13.0** | Shared subscription term + usage helpers | **Complete** |
+| **13.1** | Backend renewal rules + capacity guards + expiry sync | **Complete** |
+| **13.2** | Expired de-provisioning lane | **Complete** |
+| **13.3** | Portal dual-mode checkout | **Complete** |
+| **13.4** | Renewal entry points + downgrade prompt | **Complete** |
+| **13.5** | Docs / ADR / regression closure | **Complete** |
+| **13.6** | End-to-end QA matrix | **Complete** |
 
 ---
 
-## Completed — Phase 10.5
+## Phase 13.0 — Helpers
 
-- [x] Task 10.5.1: `npm run build` (frontend) succeeded
-- [x] Task 10.5.2: Backend camera modules smoke test (Camera model, controller, routes, validation, userController)
-- [x] Task 10.5.3: Code-verified integrations — usage endpoint, operator PUT, live count, shared components, detection hook, socket handler
-- [x] Task 10.5.4: Updated `REGRESSION_CHECKLIST.md` (Camera Management section)
-- [x] Task 10.5.5: Updated `ARCHITECTURE_DECISIONS.md` (ADR-004)
+- [x] `backend/utils/subscriptionTerm.js` — `isSubscriptionTermActive`, `isOrganizationRenewable`, `getOrganizationUsageCounts`, `syncExpiredSubscriptionState`
 
-## Phase 10.5 Validation
+## Phase 13.1 — Backend
 
-- [x] `npm run build` (frontend) succeeded — exit 0, built in ~12s
-- [x] Backend modules load without errors — camera stack OK (pre-existing Mongoose duplicate-index warning on Subscription)
+- [x] Checkout blocks **any** plan while term active (not same-plan-only)
+- [x] Suspended org → 403 at checkout
+- [x] Live camera + operator count vs plan limits → 400 before writes
+- [x] `requireActiveSubscription` syncs `Subscription.status` to `expired` when past end date
+- [x] `POST /api/subscriptions/checkout` remains without subscription middleware (renewal path open)
 
-## Phase 10.5 Change Report
+### Validation (2026-10-16)
 
-### Modified files
+- [x] `subscriptionTerm` pure logic unit checks (node)
+- [x] `subscriptionController` + `auth` middleware load without error
+- [ ] V1–V10 against MongoDB (manual / scripted HTTP — pending DB QA)
 
-- `docs/REGRESSION_CHECKLIST.md` — Camera Management (Phase 10) checklist + build verification dates
-- `docs/ARCHITECTURE_DECISIONS.md` — ADR-004 shared camera layer + live usage count
-- `docs/CURRENT_ITERATION.md` — Phase 10.5 completion
+## Phase 13.2 — De-provisioning lane
 
-### Post-QA fixes (Phase 10 hardening)
+- [x] `requireActiveSubscriptionUnlessDeprovision` — org_admin GET `/cameras`, GET `/usage`, DELETE `/:id` when expired
+- [x] `cameraController` blocks create/update in `deprovisionMode`
+- [x] `frontend/src/pages/customer/DowngradePrepPage.jsx` at `/customer/downgrade-prep?planId=`
+- [x] Operator removal via existing `DELETE /api/users/:id` (no subscription middleware on users routes)
 
-- `frontend/src/utils/camera.js` — shared `isCameraOnline`, `findCameraById`, ID normalization
-- `frontend/src/store/slices/cameraSlice.js` — socket status updates match string/ObjectId IDs
-- `frontend/src/pages/orgadmin/Cameras.jsx` — live Redux lookup for fullscreen/settings; usage loading state
-- `frontend/src/pages/operator/Cameras.jsx`, `operator/Dashboard.jsx` — same live lookup pattern
-- `frontend/src/pages/orgadmin/Dashboard.jsx`, `operator/Dashboard.jsx` — online count uses `ONLINE` + `online`
-- `frontend/src/components/cameras/*` — grid skeleton, form backdrop close, operator ID fixes, settings validation
-- `backend/routes/cameras.js` — `validateCamera` on PUT (type-aware updates)
+### Validation (2026-10-16)
 
----
+- [x] Backend camera routes + auth middleware load
+- [x] `npm run build` (frontend)
+- [ ] V11–V14 against MongoDB (manual — pending DB QA)
 
-## Completed — Phase 10.4
+## Phase 13.3 — Portal dual-mode checkout
 
-- [x] Task F8: `operator/Cameras.jsx` — shared `CameraGrid` + `CameraFullscreenModal` (read-only, no settings)
-- [x] Task F8: `operator/Dashboard.jsx` — assigned camera mini-grid (first 4) + empty state + fullscreen from dashboard
-- [x] Task F9: `Operators.jsx` — assign modal empty state with link to `/orgadmin/cameras` when no cameras exist
+- [x] `PORTAL_ROLES` on `/customer/subscribe` and `/customer/subscribe/:planId` (`App.jsx`)
+- [x] `frontend/src/utils/checkoutMode.js` — `first_purchase`, `renewal`, `blocked_active`, `blocked_suspended`
+- [x] `SubscribePage.jsx` — account summary on mount, mode-specific form, error mapping, token refresh
+- [x] `SubscriptionPage.jsx` — `renewed=1` success copy
 
-## Phase 10.4 Validation
+### Validation (2026-10-16)
 
-- [x] `npm run build` (frontend) succeeded
+- [x] `npm run build` (frontend)
+- [ ] V15–V17 against MongoDB (manual — pending DB QA)
 
-## Phase 10.4 Change Report
+## Phase 13.4 — Entry points + capacity UX
 
-### Modified files
+- [x] `frontend/src/hooks/useRenewalEligibility.js` — mode, `canRenew`, `canCheckoutPlan(plan)`
+- [x] `PlansPage` — Renew / Subscribe / View Subscription; over-capacity opens `PlanCapacityModal`
+- [x] Plan cards show “Not enough slots” in renewal mode when camera usage exceeds the plan
+- [x] Expired banner, portal subscription CTA, org-admin subscription link, profile **Renew plan**
+- [x] Pending plan deep links wait for account summary; active term does not open checkout
+- [x] FAQ expiry and one-organization answers
+- [x] Inactive plan deep link remains on `SubscribePage` (Phase 13.3)
+- [x] Operators have no renewal menu item
 
-- `frontend/src/pages/operator/Cameras.jsx` — replaced inline tile with shared grid/fullscreen components
-- `frontend/src/pages/operator/Dashboard.jsx` — camera preview strip, empty state, fullscreen modal
-- `frontend/src/pages/orgadmin/Operators.jsx` — no-cameras message + Cameras page link in assign modal
+### Validation (2026-10-16)
 
----
+- [x] `checkoutMode` capacity helper checks (node)
+- [x] `npm run build` (frontend)
+- [ ] V18–V21 in the browser against a logged-in expired organization (manual — pending DB QA)
 
-## Completed — Phase 10.3
+## Phase 13.5 — Docs, ADR, regression pointers
 
-- [x] Task F4: `CameraFormModal.jsx` — add/edit form with camera-type conditional fields; ONVIF disabled (Coming soon)
-- [x] Task F5: `CameraFullscreenModal.jsx` — immersive live view, AI detection overlay, Esc to close, settings shortcut
-- [x] Task F6: `CameraSettingsDrawer.jsx` + `CameraOperatorPicker.jsx` — identity, connection, hardware, detection, operator access, soft delete
-- [x] Task F7: `orgadmin/Cameras.jsx` — rebuilt with usage banner, grid, form/fullscreen/settings modals wired to Redux
+- [x] ADR-006 — renewal reuses `POST /api/subscriptions/checkout`; `isSubscriptionTermActive`; expired camera list/delete exception; no mid-term plan change
+- [x] `docs/REGRESSION_CHECKLIST.md` — Subscription Renewal section lists V1–V21
+- [x] Help page reads `frontend/src/data/faq.js`. Contact Support is `/customer/help/contact`. No separate static FAQ copy.
 
-## Phase 10.3 Validation
+### Validation (2026-10-17)
 
-- [x] `npm run build` (frontend) succeeded
+- [x] ADR symbols match `subscriptionTerm.js`, `routes/subscriptions.js`, and `requireActiveSubscriptionUnlessDeprovision`
+- [x] FAQ expiry and one-organization answers match the renewal rules
+- [x] V1–V21 executed in Phase 13.6
 
-## Phase 10.3 Change Report
+## Phase 13.6 — End-to-end QA
 
-### New files
+Disposable `qa136.*` accounts and `qa136-*` plans were created through the API, exercised, then deleted. One pre-existing organization remains.
 
-- `frontend/src/components/cameras/CameraFormModal.jsx` — type-aware add/edit camera form
-- `frontend/src/components/cameras/CameraFullscreenModal.jsx` — fullscreen live viewer + AI overlay
-- `frontend/src/components/cameras/CameraSettingsDrawer.jsx` — side drawer for camera settings and operator assignment
-- `frontend/src/components/cameras/CameraOperatorPicker.jsx` — multi-select operator checkboxes
+- [x] P1 / V1 / V15 — expired admin renewed the same plan; organization id, camera note, and operator assignment stayed; a new order was added
+- [x] P2 — upgrade changed `maxCameras` / `maxOperators` and kept the camera
+- [x] P3 — downgrade within capacity succeeded
+- [x] P4 / V7 / V11 / V12 — over camera limit returned 400 with no new order; list and delete worked; create returned 403; checkout succeeded after one delete
+- [x] P5 / V3 / V4 — active term checkout returned 400 for the same plan and a different plan
+- [x] P6 / V9 — first purchase created one organization and role `org_admin`
+- [x] P7 / V14 — operator cameras and alerts returned 403 while expired; both returned to access after the admin renewed. MJPEG returned 403 while expired. Inference camera discovery omitted the expired org and included it after renewal
+- [x] P8 / V6 — super admin deactivated a plan; checkout onto it returned 404 and the subscription stayed expired
+- [x] V5 — suspended organization checkout returned 403
+- [x] V8 — live operator count over the plan returned 400 with no new order
+- [x] V10 — a past end date with status still `active` synced both documents to `expired`. Camera list stayed available. Camera create, alerts, and incidents returned 403
+- [x] V13 — camera delete while the term was active returned 200
+- [x] V16–V21 browser — expired banner, Plans **Renew**, capacity modal, downgrade prep, profile **Renew plan**, org-admin **Renew or change plan**, active subscribe URL redirected to My Subscription, customer checkout still shows organization name and **Complete Purchase**
+- [x] `npm run build` (frontend) exit 0 on 2026-10-17
+- [x] No new environment variables and no new npm dependencies
 
-### Modified files
+### Validation note
 
-- `frontend/src/pages/orgadmin/Cameras.jsx` — composes shared camera components; plan-limit-aware add flow
-
----
-
-## Completed — Phase 10.2
-
-- [x] Task F1: `apiEndpoints.js` — `getCameraUsage`, `assignOperatorsToCamera` (+ trash/restore helpers from 10.1)
-- [x] Task F1: `cameraSlice` — `fetchCameraUsage` thunk; `usage` state synced on create/delete/restore
-- [x] Task F2: `CameraUsageBanner.jsx` — plan usage bar + Add Camera button (disabled at limit with tooltip)
-- [x] Task F3: `CameraTile.jsx` — compact tile (displayNumber, location, status, muted preview, settings gear)
-- [x] Task F3: `CameraGrid.jsx` — responsive grid wrapper with loading/empty slots
-
-## Phase 10.2 Validation
-
-- [x] `npm run build` (frontend) succeeded
-
-## Phase 10.2 Change Report
-
-### New files
-
-- `frontend/src/components/cameras/CameraUsageBanner.jsx` — header + usage bar + add CTA
-- `frontend/src/components/cameras/CameraTile.jsx` — compact/read-only preview tile (no AI on tile)
-- `frontend/src/components/cameras/CameraGrid.jsx` — responsive grid composing tiles
-
-### Modified files
-
-- `frontend/src/services/apiEndpoints.js` — camera usage + operator assignment helpers (from 10.1)
-- `frontend/src/store/slices/cameraSlice.js` — `fetchCameraUsage` thunk, `usage` slice state
+Portal capacity copy uses account-summary `operatorsUsed`, which checkout stores as `1` on first purchase. The API guard counts live operators. Both behaviors matched ADR-006.
 
 ---
 
-## Completed — Phase 10.1
+## Previous — Iteration 12 (AI Inference)
 
-- [x] Task B1: `GET /api/cameras/usage` — live count vs plan limit (`org_admin` only)
-- [x] Task B2: Auto-suggest `displayNumber` on create (`CAM-01`, …); persist `cameraType` + `settings`
-- [x] Task B3: `PUT /api/cameras/:id/operators` — camera-centric operator assignment
-- [x] Task B4: `getAccountSummary` — `camerasUsed` from live `Camera.countDocuments`
-- [x] Task B5: Extended `validateCamera` — type enum; `http_mjpeg` requires `streamUrl`; `ip_rtsp`/`onvif` require IP
-- [x] Schema: `Camera.js` — `cameraType`, `displayNumber`, `settings`; `ipAddress` optional (validated by type)
-- [x] Delete cascade: soft-delete removes `OperatorCameraAssignment` rows for camera
-- [x] Trash flow: `GET /api/cameras/deleted`, `PUT /api/cameras/:id/restore`, `DELETE /api/cameras/:id/permanent`
-- [x] Permanent delete requires soft-delete first; cascades alerts + assignments
-
-## Phase 10.1 Validation
-
-- [x] Backend modules load without errors
-
-## Phase 10.1 Change Report
-
-### Modified files
-
-- `backend/models/Camera.js` — new fields; IP no longer schema-required; `restore()` method
-- `backend/controllers/cameraController.js` — usage, create/update extensions, operator PUT, delete/restore/permanent, trash list
-- `backend/routes/cameras.js` — `/usage`, `/deleted`, `/:id/operators`, `/:id/restore`, `/:id/permanent`
-- `backend/middleware/validation.js` — camera-type conditional validation
-- `backend/controllers/userController.js` — live camera count in account summary
-
----
-
-## Previous Iteration — Customer Portal (Phase 9)
-
-**Status:** Complete (Phase 9.5)
-
-## Phase 9 Overview
-
-| Phase | Name | Status |
-|-------|------|--------|
-| **9.1** | Portal Shell & Routing | **Complete** |
-| **9.2** | Plans & Subscribe in Portal | **Complete** |
-| **9.3** | Subscription & Dashboard Data | **Complete** |
-| **9.4** | Profile, Dropdown, Settings, Help | **Complete** |
-| **9.5** | Polish & Regression | **Complete** |
-
----
-
-## Completed — Phase 9.1
-
-- [x] Task 9.1.1: `CustomerLayout`, `CustomerSidebar`, `CustomerHeader`
-- [x] Task 9.1.2: `Dashboard.jsx` stub
-- [x] Task 9.1.3: `App.jsx` routes + legacy redirects
-- [x] Task 9.1.4: `roleRoutes.js` portal paths (`customer` + `org_admin` → `/customer/dashboard`)
-- [x] Task 9.1.5: Auth redirects via updated `getDashboardPathForRole`
-- [x] Task 9.1.6: `LandingPage.jsx` portal redirect; customer header removed
-- [x] Task 9.1.7: `ProtectedRoute` allows `customer` + `org_admin` on `/customer/*`
-
-## Completed — Phase 9.2
-
-- [x] Task 9.2.1: Extract `PlanCardGrid` / `PlanCard` (+ shared `planFormatting.js`)
-- [x] Task 9.2.2: `PlansPage.jsx` at `/customer/plans`
-- [x] Task 9.2.3: Subscribe routes under `/customer/subscribe` and `/customer/subscribe/:planId` (polished)
-- [x] Task 9.2.4: Post-checkout → `/customer/subscription?success=1`
-- [x] Task 9.2.5: `planId` flow via `getPostAuthRedirectPath` (Login, Register, OAuth, landing, dashboard)
-- [x] Task 9.2.6: Backend single-org checkout guard in `subscriptionController.js`
-
-## Completed — Phase 9.3
-
-- [x] Task 9.3.1: `GET /api/users/me/account-summary`
-- [x] Task 9.3.2: `customerApi.js` — `getAccountSummary()`
-- [x] Task 9.3.3: `SubscriptionPage.jsx` — plan, org, dates, role, usage, order history
-- [x] Task 9.3.4: Dashboard post-purchase cards (subscription summary + org + Open Org Dashboard CTA)
-- [x] Task 9.3.5: Expiry / suspended org status display
-
-## Completed — Phase 9.4
-
-- [x] Task 9.4.1: Redesign `ProfileViewPage` / `ProfileEditPage` (Facebook-style cover + avatar via `ProfileHero`)
-- [x] Task 9.4.2: Enhance `CustomerProfileMenu` — grouped items, View/Edit Profile, Settings, Help, Open Org Dashboard, Logout
-- [x] Task 9.4.3: `SettingsPage.jsx` — account info, Google set-password link, forgot-password link, theme toggle
-- [x] Task 9.4.4: `HelpPage.jsx` + `frontend/src/data/faq.js` (accordion FAQ)
-- [x] Task 9.4.5: Portal access via `isPortalUser` on subscribe (org_admin redirected); profile pages allow org_admin
-- [x] Task 9.4.6: Org admin `Header` / `Sidebar` — “Account” link to `/customer/dashboard`
-
-## Phase 9.4 Validation
-
-- [x] `npm run build` (frontend) succeeded
-- [x] Backend modules load without errors
-
-## Phase 9.4 Change Report
-
-### New files
-
-- `frontend/src/components/profile/ProfileHero.jsx` — Facebook-style cover banner + overlapping avatar
-- `frontend/src/data/faq.js` — FAQ categories and items for Help page
-
-### Modified files
-
-- `frontend/src/pages/customer/ProfileViewPage.jsx` — hero layout, About section, org admin CTA
-- `frontend/src/pages/customer/ProfileEditPage.jsx` — hero layout with inline photo edit
-- `frontend/src/components/CustomerProfileMenu.jsx` — grouped menu, escape/outside close, danger logout styling
-- `frontend/src/pages/customer/SettingsPage.jsx` — account, password, appearance (theme via `localStorage.theme`)
-- `frontend/src/pages/customer/HelpPage.jsx` — FAQ accordion + contact CTA
-- `frontend/src/pages/customer/SubscribePage.jsx` — `isPortalUser` guard (org_admin → dashboard)
-- `frontend/src/components/Sidebar.jsx` — org admin “Account” nav link
-- `frontend/src/components/Header.jsx` — org admin “Account” header link
-
----
-
-## Phase 9.5 — Polish & Regression
-
-- [x] Task 9.5.1: Unify theme key (`localStorage.theme`) across landing, portal, admin
-- [x] Task 9.5.2: Mobile sidebar drawer, skeletons, empty states
-- [x] Task 9.5.3: `npm run build` + backend smoke test
-- [x] Task 9.5.4: Update `REGRESSION_CHECKLIST.md`, `ARCHITECTURE_DECISIONS.md` (ADR-003)
-
-## Phase 9.5 Validation
-
-- [x] `npm run build` (frontend) succeeded
-- [x] Backend modules load without errors
-
-## Phase 9.5 Change Report
-
-### New files
-
-- `frontend/src/utils/theme.js` — shared theme init, persistence (`localStorage.theme`), legacy `darkMode` migration
-- `frontend/src/components/ui/PortalSkeletons.jsx` — dashboard, subscription, plans, settings loading skeletons
-
-### Modified files
-
-- `frontend/index.html` — inline theme script to prevent flash of wrong theme
-- `frontend/src/main.jsx` — call `initTheme()` on boot
-- `frontend/src/components/Header.jsx` — admin header uses unified `theme` key
-- `frontend/src/pages/public/LandingPage.jsx` — uses shared theme utilities
-- `frontend/src/pages/customer/SettingsPage.jsx` — uses shared theme utilities + skeleton
-- `frontend/src/layouts/CustomerLayout.jsx` — menu toggle wired to header
-- `frontend/src/components/CustomerHeader.jsx` — mobile menu button in header
-- `frontend/src/components/CustomerSidebar.jsx` — drawer-only sidebar (toggle moved to header)
-- `frontend/src/pages/customer/Dashboard.jsx` — loading skeleton
-- `frontend/src/pages/customer/SubscriptionPage.jsx` — loading skeleton
-- `frontend/src/components/plans/PlanCardGrid.jsx` — plan card skeletons + dashed empty state
-
----
-
-## Change Log
-
-| Date | Step | Summary |
-|------|------|---------|
-| 2026-07-27 | Order edit | Super Admin PUT /api/orders/:id + edit modal (status, plan, amount, notes, payment ID) |
-| 2026-07-27 | Phase 11.3 | Dashboard Total Orders stat fix, Orders summary strip, error toasts, build passed |
-| 2026-07-27 | Phase 11.2 | Orders frontend: API helpers, filterable table, read-only detail drawer, build passed |
-| 2026-07-27 | Phase 11.1 | Orders backend: list/detail/stats API, super_admin routes, smoke test passed |
-| 2026-07-27 | Phase 10 QA | Bug fixes: online status, stale modal state, PUT validation, UI skeletons, ID normalization |
-| 2026-07-27 | Phase 10.5 | QA: build + backend smoke test, regression checklist, ADR-004 |
-| 2026-07-27 | Phase 10.4 | Operator cameras page + dashboard mini-grid, Operators assign empty state, build passed |
-| 2026-07-27 | Phase 10.3 | Camera form modal, fullscreen viewer, settings drawer, org-admin Cameras page rebuild, build passed |
-| 2026-07-27 | Phase 10.2 | Camera UI foundation: usage banner, compact tile, grid, fetchCameraUsage thunk, build passed |
-| 2026-07-27 | Phase 10.1 | Camera backend: usage endpoint, schema extensions, operator PUT, live count, validation, delete cascade |
-| 2026-07-26 | Phase 9.1 | Customer portal shell, routing, landing redirect, legacy path redirects, build passed |
-| 2026-07-26 | Phase 9.2 | PlanCard extraction, PlansPage, subscribe flow in portal, post-checkout redirect, planId auth flow, checkout guard, build passed |
-| 2026-07-26 | Phase 9.3 | Account summary API, SubscriptionPage, Dashboard data cards, expiry/suspended banners, build passed |
-| 2026-07-26 | Phase 9.4 | Profile hero redesign, settings/help pages, profile menu polish, org admin Account links, build passed |
-| 2026-07-26 | Phase 9.5 | Unified theme key, portal skeletons/empty states, mobile drawer polish, build passed |
+Complete — see git history and Phase 12 sections in `REGRESSION_CHECKLIST.md`.

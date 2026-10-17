@@ -12,7 +12,9 @@ import {
   ShoppingCart,
   LayoutDashboard,
   Settings,
+  RefreshCw,
 } from 'lucide-react';
+import { useRenewalEligibility } from '../hooks/useRenewalEligibility';
 
 const MenuItem = ({ icon: Icon, label, onClick, variant = 'default' }) => (
   <button
@@ -34,7 +36,7 @@ const MenuDivider = () => (
   <hr className="my-1 border-gray-200 dark:border-gray-700" aria-hidden="true" />
 );
 
-const CustomerProfileMenu = ({ user }) => {
+const CustomerProfileMenu = ({ user, onPurchasePlan }) => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const menuRef = useRef(null);
@@ -42,6 +44,7 @@ const CustomerProfileMenu = ({ user }) => {
 
   const isOrgAdmin = user?.role === 'org_admin';
   const isCustomer = user?.role === 'customer';
+  const { canRenew } = useRenewalEligibility({ enabled: isOrgAdmin });
 
   useEffect(() => {
     if (!menuOpen) return undefined;
@@ -150,7 +153,22 @@ const CustomerProfileMenu = ({ user }) => {
             <MenuItem
               icon={ShoppingCart}
               label="Purchase Plan"
-              onClick={() => goTo('/customer/subscribe')}
+              onClick={() => {
+                if (onPurchasePlan) {
+                  setMenuOpen(false);
+                  onPurchasePlan();
+                  return;
+                }
+                goTo('/customer/subscribe');
+              }}
+            />
+          )}
+
+          {isOrgAdmin && canRenew && (
+            <MenuItem
+              icon={RefreshCw}
+              label="Renew plan"
+              onClick={() => goTo('/customer/plans')}
             />
           )}
 

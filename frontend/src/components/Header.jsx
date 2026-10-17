@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
-import { Bell, Moon, Sun, UserCircle } from 'lucide-react';
+import { Bell, Menu, Moon, Sun, UserCircle } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { fetchNotifications, markAsRead } from '../store/slices/notificationSlice';
 import {
@@ -10,7 +10,7 @@ import {
   subscribeToThemeChanges,
 } from '../utils/theme';
 
-const Header = () => {
+const Header = ({ onMenuClick }) => {
   const dispatch = useDispatch();
   const { user } = useSelector((state) => state.auth);
   const { notifications, unreadCount } = useSelector((state) => state.notifications);
@@ -44,14 +44,24 @@ const Header = () => {
 
   return (
     <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
-      <div className="px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+      <div className="px-4 sm:px-6 py-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          {onMenuClick && (
+            <button
+              type="button"
+              onClick={onMenuClick}
+              className="lg:hidden shrink-0 p-2 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              aria-label="Open navigation menu"
+            >
+              <Menu size={20} />
+            </button>
+          )}
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white truncate">
             Fire Detection System
           </h2>
         </div>
 
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           {isOrgAdmin && (
             <Link
               to="/customer/dashboard"

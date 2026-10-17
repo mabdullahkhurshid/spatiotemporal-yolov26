@@ -76,6 +76,29 @@ const alertSchema = new mongoose.Schema(
       x: { type: Number },
       y: { type: Number },
     },
+    incidentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'FireIncident',
+    },
+    primaryClass: {
+      type: String,
+      enum: ['fire', 'smoke', 'other'],
+    },
+    boundingBoxes: [
+      {
+        className: String,
+        confidence: Number,
+        x: Number,
+        y: Number,
+        w: Number,
+        h: Number,
+      },
+    ],
+    metricsSnapshot: {
+      detectionFrequencyPerMin: Number,
+      estimatedSpreadRate: Number,
+      incidentDurationSec: Number,
+    },
     timestamp: {
       type: Date,
       default: Date.now,

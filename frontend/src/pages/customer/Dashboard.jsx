@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 
 import { Link, useNavigate } from 'react-router-dom';
 
@@ -22,7 +22,7 @@ import {
 
 } from 'lucide-react';
 
-import { getAccountSummary } from '../../services/customerApi';
+import { useRenewalEligibility } from '../../hooks/useRenewalEligibility';
 
 import AccountStatusBanner from '../../components/account/AccountStatusBanner';
 import { DashboardSkeleton } from '../../components/ui/PortalSkeletons';
@@ -39,6 +39,11 @@ import {
 
 import { clearPendingPlanId, getPendingPlanId, isPortalUser } from '../../utils/roleRoutes';
 
+import {
+  ACTIVE_SUBSCRIPTION_MESSAGE,
+  CHECKOUT_MODE,
+} from '../../utils/checkoutMode';
+
 
 
 const Dashboard = () => {
@@ -47,9 +52,14 @@ const Dashboard = () => {
 
   const { user, isAuthenticated } = useSelector((state) => state.auth);
 
-  const [summary, setSummary] = useState(null);
+  const portalReady = isAuthenticated && isPortalUser(user?.role);
 
-  const [loadingSummary, setLoadingSummary] = useState(true);
+  const {
+    accountSummary: summary,
+    loading: loadingSummary,
+    error: summaryError,
+    mode,
+  } = useRenewalEligibility({ enabled: portalReady });
 
 
 
@@ -66,52 +76,40 @@ const Dashboard = () => {
 
 
   useEffect(() => {
-
-    const pendingPlanId = getPendingPlanId();
-
-    if (pendingPlanId) {
-
-      clearPendingPlanId();
-
-      navigate(`/customer/subscribe/${encodeURIComponent(pendingPlanId)}`, { replace: true });
-
+    if (summaryError) {
+      toast.error(summaryError);
     }
-
-  }, [navigate]);
-
-
+  }, [summaryError]);
 
   useEffect(() => {
-
-    const loadSummary = async () => {
-
-      try {
-
-        const response = await getAccountSummary();
-
-        setSummary(response.data.data);
-
-      } catch (error) {
-
-        toast.error(error.response?.data?.message || 'Failed to load account summary');
-
-      } finally {
-
-        setLoadingSummary(false);
-
-      }
-
-    };
-
-
-
-    if (isAuthenticated && isPortalUser(user?.role)) {
-
-      loadSummary();
-
+    if (!portalReady || loadingSummary) {
+      return;
     }
 
-  }, [isAuthenticated, user?.role]);
+    const pendingPlanId = getPendingPlanId();
+    if (!pendingPlanId) {
+      return;
+    }
+
+    if (mode === CHECKOUT_MODE.BLOCKED_ACTIVE) {
+      clearPendingPlanId();
+      toast.error(ACTIVE_SUBSCRIPTION_MESSAGE);
+      navigate('/customer/subscription', { replace: true });
+      return;
+    }
+
+    if (mode === CHECKOUT_MODE.BLOCKED_SUSPENDED) {
+      clearPendingPlanId();
+      toast.error('Your organization is suspended. Please contact support.');
+      navigate('/customer/subscription', { replace: true });
+      return;
+    }
+
+    if (mode === CHECKOUT_MODE.RENEWAL || mode === CHECKOUT_MODE.FIRST_PURCHASE) {
+      clearPendingPlanId();
+      navigate(`/customer/subscribe/${encodeURIComponent(pendingPlanId)}`, { replace: true });
+    }
+  }, [portalReady, loadingSummary, mode, navigate]);
 
 
 

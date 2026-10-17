@@ -6,7 +6,7 @@
 
 **Architecture:** Reuse existing backend CRUD (`POST/PUT/DELETE /api/cameras`) and operator-assignment model; add small backend extensions for usage summary and camera-centric operator assignment; rebuild org-admin Cameras page around shared React components used by both org-admin and operator views.
 
-**Tech Stack:** MERN (existing), Redux Toolkit (`cameraSlice`), React Router, Tailwind, existing `useFireSmokeDetection` hook, Socket.io status updates.
+**Tech Stack:** MERN (existing), Redux Toolkit (`cameraSlice`), React Router, Tailwind, `useLiveDetection` + Socket.io `detection:live`, Socket.io status updates.
 
 ## Global Constraints
 
@@ -299,7 +299,7 @@ Fields by type (see §4.2). On submit call `createCamera` or `updateCamera` from
 - Create: `frontend/src/components/cameras/CameraFullscreenModal.jsx`
 
 - Fixed overlay, `Escape` to close, click-outside optional.
-- Full-width `<video>` + `useFireSmokeDetection`.
+- Full-width `<video>` + `useLiveDetection` / `DetectionOverlayCanvas`.
 - Header: displayNumber, name, location, status.
 - Org admin: shortcut button to open settings drawer.
 

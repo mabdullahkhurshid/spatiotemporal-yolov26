@@ -50,3 +50,41 @@
 - Plan limit enforcement is accurate in UI and API.
 - Soft-delete cascades remove `OperatorCameraAssignment` rows for the camera.
 - ONVIF type is schema-ready but disabled in UI v1 (“Coming soon”).
+
+## ADR-005: Python ONNX inference sidecar (CPU-first) (2026-10-16)
+
+**Context:** In-browser inference could not match YOLOv26 weights, could not monitor RTSP 24/7, and did not expose bounding-box analytics.
+
+**Decision:**
+- Run **YOLOv26 Ultralytics-exported ONNX** (`best.onnx`) in a **Python inference service** on the host CPU (optional GPU cloud later).
+- Node remains the **control plane**: internal API key routes under `/api/internal/inference`, MongoDB persistence, Socket.io fan-out (`detection:live`, `incident:updated`, `incident:ended`), existing alert/email/notification pipeline via `alertCreationService`.
+- React visualizes server detections (overlay + metrics); default `VITE_AI_MODE=server`.
+
+**Consequences:**
+- Legacy browser-side ML and `ml/` training folder removed; Colab/Roboflow YOLOv26 export + `python-services/inference` runtime only.
+- Weights live under `python-services/inference/weights/` (gitignored).
+- RTSP browser playback may still require a future media relay phase; inference works independently of UI video.
+
+## ADR-006: Renewal reuses checkout (2026-10-17)
+
+**Context:** An expired organization admin must renew the same organization. A second organization, a new billing service, and a mid-term plan swap are out of scope. While the term is active, product APIs stay gated. After expiry, the admin still needs a way to delete cameras so a smaller plan can be purchased.
+
+**Decision:**
+
+- `POST /api/subscriptions/checkout` is the only self-service purchase and renewal write. It stays behind `protect` only. It does not use `requireActiveSubscription` or `requireActiveOrganization`, so an expired org admin can still call it.
+- `backend/utils/subscriptionTerm.js` is the term definition. `isSubscriptionTermActive` is true only when the organization is `ACTIVE`, `subscriptionStatus` is `active`, the subscription document is `active`, and `subscription.endDate` is still in the future. A past org or subscription end date means the term is not active.
+- While that helper returns true, checkout returns 400 for every plan id: `You already have an active subscription. You can change plans after it expires.`
+- A suspended organization receives 403 and cannot self-serve checkout.
+- A successful renewal updates the existing `Organization` and `Subscription`, appends a new approved `Order`, and starts a new term at checkout time (`startDate` now, `endDate` now plus the plan duration). Camera records are left in place. `camerasUsed` and `operatorsUsed` on the subscription document are preserved.
+- Before those writes, checkout counts live cameras (`isDeleted: false`) and active operators (`role: operator`). If either count exceeds the selected plan, checkout returns 400 and writes nothing.
+- Expired org admins may list cameras, read usage, and soft-delete a camera through `requireActiveSubscriptionUnlessDeprovision`. Create, update, stream, and restore stay blocked. Alerts and incidents keep `requireActiveSubscription`. The inference camera list includes only subscriptions with `status: active` and `endDate` still in the future. Operator removal stays on `DELETE /api/users/:id`, which has no subscription middleware.
+- The portal classifies the account as first purchase, renewal, active term, or suspended from `GET /api/users/me/account-summary`. Renewal entry points go to `/customer/plans`, then `/customer/subscribe/:planId`. Over-capacity plans open a prompt and link to `/customer/downgrade-prep`. Help copy comes from `frontend/src/data/faq.js` via `/customer/help`.
+
+**Consequences:**
+
+- One email keeps one organization across expiry and renewal.
+- Plan changes wait until the current term has ended. There is no proration.
+- Payment remains simulated.
+- Operators have no renewal UI. Their product access returns when the org admin’s term is active again.
+- Super Admin `assignPlanToOrganization` is unchanged and can still write the same organization outside this checkout path.
+- Portal capacity hints use account-summary usage. Camera usage there is a live count. Operator usage there is the stored `operatorsUsed` counter. Checkout’s live operator count remains the enforcement source.

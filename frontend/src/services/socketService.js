@@ -1,7 +1,7 @@
 import { io } from 'socket.io-client';
 import { store } from '../store/store';
 import { addAlert, updateAlert } from '../store/slices/alertSlice';
-import { updateCameraStatus } from '../store/slices/cameraSlice';
+import { setLiveDetection, updateCameraStatus } from '../store/slices/cameraSlice';
 import { addNotification } from '../store/slices/notificationSlice';
 
 class SocketService {
@@ -56,6 +56,18 @@ class SocketService {
     // Camera status events
     this.socket.on('camera:status:update', (data) => {
       store.dispatch(updateCameraStatus(data));
+    });
+
+    this.socket.on('detection:live', (data) => {
+      if (!data?.cameraId) return;
+      store.dispatch(
+        setLiveDetection({
+          cameraId: data.cameraId,
+          detections: data.detections,
+          metrics: data.metrics,
+          timestamp: data.timestamp,
+        })
+      );
     });
   }
 

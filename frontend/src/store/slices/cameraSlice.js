@@ -80,8 +80,29 @@ const cameraSlice = createSlice({
       loading: false,
       error: null,
     },
+    liveDetectionById: {},
   },
   reducers: {
+    setLiveDetection: (state, action) => {
+      const { cameraId, detections, metrics, timestamp } = action.payload;
+      if (!cameraId) return;
+      state.liveDetectionById[String(cameraId)] = {
+        detections: detections || [],
+        metrics: metrics || {},
+        timestamp: timestamp || new Date().toISOString(),
+      };
+      const cam = state.cameras.find((c) => String(c._id) === String(cameraId));
+      if (cam) {
+        cam.inference = {
+          ...(cam.inference || {}),
+          fireConfidence: metrics?.fireConfidence,
+          smokeConfidence: metrics?.smokeConfidence,
+          detectionFrequencyPerMin: metrics?.detectionFrequencyPerMin,
+          estimatedSpreadRate: metrics?.estimatedSpreadRate,
+          boxes: detections,
+        };
+      }
+    },
     updateCameraStatus: (state, action) => {
       const { cameraId, status, lastActivity } = action.payload;
       const targetId = cameraId != null ? String(cameraId) : '';
@@ -152,5 +173,5 @@ const cameraSlice = createSlice({
   },
 });
 
-export const { updateCameraStatus } = cameraSlice.actions;
+export const { updateCameraStatus, setLiveDetection } = cameraSlice.actions;
 export default cameraSlice.reducer;

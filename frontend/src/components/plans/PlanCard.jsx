@@ -39,6 +39,7 @@ const PlanCard = ({
   onSubscribe,
   subscribeLabel = 'Subscribe',
   disabled = false,
+  capacityHint = '',
 }) => {
   const styles = variantStyles[variant] || variantStyles.landing;
 
@@ -84,6 +85,16 @@ const PlanCard = ({
         </li>
         <li>Support: {plan.supportPriority || 'Standard'}</li>
       </ul>
+
+      {capacityHint ? (
+        <p
+          className={`mt-4 text-xs font-semibold ${
+            variant === 'landing' ? 'text-amber-300' : 'text-amber-700 dark:text-amber-300'
+          }`}
+        >
+          {capacityHint}
+        </p>
+      ) : null}
 
       <button
         type="button"

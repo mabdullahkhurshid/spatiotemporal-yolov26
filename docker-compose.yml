@@ -22,11 +22,28 @@ services:
       - NODE_ENV=production
       - MONGODB_URI=mongodb://mongodb:27017/fire-detection-system
       - PORT=5000
+      - INFERENCE_SERVICE_API_KEY=${INFERENCE_SERVICE_API_KEY:-change-me-inference-key}
     depends_on:
       - mongodb
     volumes:
       - ./backend:/app/backend
+      - ./uploads:/app/uploads
       - /app/node_modules
+
+  inference:
+    build: ./python-services/inference
+    container_name: fire-detection-inference
+    restart: unless-stopped
+    environment:
+      - BACKEND_URL=http://backend:5000
+      - INFERENCE_SERVICE_API_KEY=${INFERENCE_SERVICE_API_KEY:-change-me-inference-key}
+      - INFERENCE_MODEL_PATH=/app/weights/best.onnx
+      - INFERENCE_FRAME_INTERVAL_MS=500
+      - INFERENCE_MAX_CONCURRENT_CAMERAS=4
+    depends_on:
+      - backend
+    volumes:
+      - ./python-services/inference/weights:/app/weights:ro
 
 volumes:
   mongodb_data:

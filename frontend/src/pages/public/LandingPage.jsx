@@ -94,7 +94,7 @@ const LandingPage = () => {
 
     const pendingPlanId = getPendingPlanId();
     if (pendingPlanId) {
-      navigate(`/customer/subscribe/${encodeURIComponent(pendingPlanId)}`, { replace: true });
+      navigate("/customer/dashboard", { replace: true });
       return;
     }
 
@@ -148,6 +148,12 @@ const LandingPage = () => {
     if (!planId) return;
 
     storePendingPlanId(planId);
+
+    if (isPortalAccount) {
+      navigate("/customer/dashboard");
+      return;
+    }
+
     navigate(`/login?planId=${encodeURIComponent(planId)}`);
   };
 
@@ -406,7 +412,7 @@ const LandingPage = () => {
                 {
                   title: "Edge AI",
                   description:
-                    "3D CNN + Transformer optimized for real-time inference on edge devices.",
+                    "YOLOv26 ONNX inference on CPU with temporal incident tracking across CCTV frames.",
                 },
                 {
                   title: "Multi-tenant SaaS",
@@ -455,8 +461,9 @@ const LandingPage = () => {
                 </h3>
 
                 <p className="text-sm text-gray-600 dark:text-gray-300">
-                  3D CNN + lightweight Transformer with temporal validation and
-                  confidence smoothing for reliable detection.
+                  YOLOv26 object detection with spatiotemporal incident
+                  validation, bounding-box overlays, and confidence smoothing
+                  for reliable fire and smoke alerts.
                 </p>
               </div>
 
@@ -505,7 +512,7 @@ const LandingPage = () => {
                 {
                   title: "2. Analyze",
                   description:
-                    "Run spatiotemporal AI and sensor fusion in near real time.",
+                    "Run the YOLOv26 inference worker on streams with optional sensor hooks in near real time.",
                 },
                 {
                   title: "3. Alert",
@@ -695,7 +702,7 @@ const LandingPage = () => {
             © {new Date().getFullYear()} FireGuard AI. All rights reserved.
           </span>
 
-          <span>Built with MERN + TensorFlow.js</span>
+          <span>Built with MERN + Python YOLOv26 (ONNX)</span>
         </div>
       </footer>
     </div>

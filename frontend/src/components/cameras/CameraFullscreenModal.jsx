@@ -1,7 +1,11 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Settings, X } from 'lucide-react';
-import { useFireSmokeDetection } from '../../hooks/useFireSmokeDetection';
 import { isCameraOnline } from '../../utils/camera';
+import { getCameraPlaybackSource } from '../../utils/cameraPlayback';
+import { useLiveDetection } from '../../hooks/useLiveDetection';
+import DetectionOverlayCanvas from './DetectionOverlayCanvas';
+
+const aiMode = import.meta.env.VITE_AI_MODE || 'server';
 
 const CameraFullscreenModal = ({
   camera,
@@ -10,15 +14,12 @@ const CameraFullscreenModal = ({
   onOpenSettings,
   showSettingsButton = false,
 }) => {
-  const videoRef = useRef(null);
-
   const detectionEnabled = camera?.settings?.detectionEnabled !== false;
+  const serverAi = aiMode === 'server';
 
-  const { modelLoaded, lastPrediction, isRunning } = useFireSmokeDetection({
-    videoRef,
-    cameraId: camera?._id,
-    enabled: open && detectionEnabled,
-  });
+  const { detections, metrics, lastUpdated } = useLiveDetection(camera?._id, open && detectionEnabled && serverAi);
+
+  const playback = useMemo(() => (camera ? getCameraPlaybackSource(camera) : { mode: 'none', url: null }), [camera]);
 
   useEffect(() => {
     if (!open) return;
@@ -47,6 +48,10 @@ const CameraFullscreenModal = ({
     secondaryParts.push(camera.label || camera.name);
   }
   if (camera.location) secondaryParts.push(camera.location);
+
+  const startedLabel = metrics.incidentStartedAt
+    ? new Date(metrics.incidentStartedAt).toLocaleString()
+    : '—';
 
   return (
     <div
@@ -97,15 +102,27 @@ const CameraFullscreenModal = ({
       </div>
 
       <div className="flex-1 relative flex items-center justify-center min-h-0 p-4">
-        {camera.streamUrl ? (
-          <video
-            ref={videoRef}
-            src={camera.streamUrl}
-            className="max-w-full max-h-full w-full h-full object-contain"
-            autoPlay
-            muted
-            playsInline
-          />
+        {playback.url ? (
+          <div className="relative max-w-full max-h-full w-full h-full flex items-center justify-center">
+            {playback.mode === 'video' ? (
+              <video
+                src={playback.url}
+                className="max-w-full max-h-full w-full h-full object-contain"
+                autoPlay
+                muted
+                playsInline
+              />
+            ) : (
+              <img
+                src={playback.url}
+                alt={`Live stream ${primaryLabel}`}
+                className="max-w-full max-h-full w-full h-full object-contain"
+              />
+            )}
+            {detectionEnabled && serverAi && (
+              <DetectionOverlayCanvas detections={detections} />
+            )}
+          </div>
         ) : (
           <div className="text-center text-gray-400 space-y-2">
             <p className="text-lg">No stream configured</p>
@@ -113,19 +130,30 @@ const CameraFullscreenModal = ({
           </div>
         )}
 
-        {lastPrediction && detectionEnabled && (
-          <div className="absolute bottom-6 left-6 bg-black/70 text-white text-sm px-4 py-2 rounded-lg">
-            Fire: {lastPrediction.fireConfidence.toFixed(1)}% | Smoke:{' '}
-            {lastPrediction.smokeConfidence.toFixed(1)}%
+        {detectionEnabled && serverAi && (
+          <div className="absolute bottom-6 left-6 bg-black/75 text-white text-xs px-4 py-3 rounded-lg space-y-1 max-w-md">
+            <p>
+              Fire: {Number(metrics.fireConfidence || 0).toFixed(1)}% | Smoke:{' '}
+              {Number(metrics.smokeConfidence || 0).toFixed(1)}%
+            </p>
+            <p>Frequency: {Number(metrics.detectionFrequencyPerMin || 0).toFixed(0)} / min</p>
+            <p>Spread est.: {Number(metrics.estimatedSpreadRate || 0).toFixed(4)} area/s</p>
+            <p>Incident started: {startedLabel}</p>
+            {lastUpdated && (
+              <p className="text-gray-400">Updated: {new Date(lastUpdated).toLocaleTimeString()}</p>
+            )}
           </div>
         )}
 
         <div className="absolute bottom-6 right-6 bg-black/70 text-white text-xs px-3 py-1.5 rounded-lg">
-          AI: {detectionEnabled ? (modelLoaded ? (isRunning ? 'Running' : 'Idle') : 'Loading model...') : 'Disabled'}
+          AI: {detectionEnabled ? 'Server (ONNX CPU)' : 'Disabled'}
+          {playback.mode === 'mjpeg' && (
+            <span className="block text-gray-400 mt-0.5">RTSP via MJPEG proxy</span>
+          )}
         </div>
       </div>
 
-      <p className="text-center text-xs text-gray-500 pb-3">Press Esc to close</p>
+      <p className="text-center text-xs text-gray-500 pb-3">Press Esc to close · Camera ID: {camera._id}</p>
     </div>
   );
 };

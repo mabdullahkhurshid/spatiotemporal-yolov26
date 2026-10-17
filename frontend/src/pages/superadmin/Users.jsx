@@ -108,6 +108,53 @@ const SuperAdminUsers = () => {
     return 'Operator';
   };
 
+  const renderRoleControl = (u) => (
+    <>
+      <span className="px-2 py-1 rounded text-xs bg-gray-100 dark:bg-gray-700">{roleLabel(u.role)}</span>
+      {u.role !== 'super_admin' && (
+        <select
+          value={u.role}
+          onChange={(e) => handleRoleChange(u, e.target.value)}
+          aria-label={`Change role for ${u.name}`}
+          className="text-xs rounded border dark:border-gray-600 bg-white dark:bg-gray-800 py-1"
+        >
+          <option value="org_admin">Org Admin</option>
+          <option value="operator">Operator</option>
+        </select>
+      )}
+    </>
+  );
+
+  const renderActions = (u) => (
+    <div className="flex flex-wrap gap-1">
+      {u.role !== 'super_admin' && !u.isVerified && (
+        <button type="button" onClick={() => handleVerify(u)} className="p-1.5 rounded bg-green-600 text-white hover:bg-green-700" title="Verify">
+          <Check size={14} />
+        </button>
+      )}
+      {u.role !== 'super_admin' && u.isActive && (
+        <button type="button" onClick={() => handleSuspend(u)} className="p-1.5 rounded bg-amber-600 text-white hover:bg-amber-700" title="Suspend">
+          <Pause size={14} />
+        </button>
+      )}
+      {u.role !== 'super_admin' && !u.isActive && (
+        <button type="button" onClick={() => handleReactivate(u)} className="p-1.5 rounded bg-blue-600 text-white hover:bg-blue-700" title="Reactivate">
+          <Play size={14} />
+        </button>
+      )}
+      {u.role !== 'super_admin' && (
+        <button type="button" onClick={() => setModal({ open: true, user: u, newPassword: '' })} className="p-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700" title="Reset password">
+          <Key size={14} />
+        </button>
+      )}
+      {u.role !== 'super_admin' && (
+        <button type="button" onClick={() => handleDelete(u)} className="p-1.5 rounded border border-red-300 text-red-600 hover:bg-red-50 dark:bg-red-900/20" title="Delete">
+          <Trash2 size={14} />
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <div className="space-y-6">
       <div>
@@ -118,86 +165,96 @@ const SuperAdminUsers = () => {
       {loading ? (
         <div className="text-center py-12">Loading...</div>
       ) : (
-        <div className="card overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="border-b border-gray-200 dark:border-gray-700">
-                <th className="pb-3 font-medium">Name</th>
-                <th className="pb-3 font-medium">Email</th>
-                <th className="pb-3 font-medium">Role</th>
-                <th className="pb-3 font-medium">Organization</th>
-                <th className="pb-3 font-medium">Verified</th>
-                <th className="pb-3 font-medium">Status</th>
-                <th className="pb-3 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => (
-                <tr key={u._id} className="border-b border-gray-100 dark:border-gray-800">
-                  <td className="py-3">{u.name}</td>
-                  <td className="py-3 text-sm text-gray-600 dark:text-gray-400">{u.email}</td>
-                  <td className="py-3">
-                    <span className="px-2 py-1 rounded text-xs bg-gray-100 dark:bg-gray-700">{roleLabel(u.role)}</span>
-                    {u.role !== 'super_admin' && (
-                      <select
-                        value={u.role}
-                        onChange={(e) => handleRoleChange(u, e.target.value)}
-                        className="ml-2 text-xs rounded border dark:border-gray-600 bg-white dark:bg-gray-800 py-1"
-                      >
-                        <option value="org_admin">Org Admin</option>
-                        <option value="operator">Operator</option>
-                      </select>
-                    )}
-                  </td>
-                  <td className="py-3 text-sm">{u.organizationId?.name || '—'}</td>
-                  <td className="py-3">
-                    {u.role === 'super_admin' ? (
-                      '—'
-                    ) : u.isVerified ? (
-                      <span className="text-green-600 dark:text-green-400">Yes</span>
-                    ) : (
-                      <span className="text-amber-600 dark:text-amber-400">Pending</span>
-                    )}
-                  </td>
-                  <td className="py-3">
-                    {u.isActive ? (
-                      <span className="text-green-600 dark:text-green-400">Active</span>
-                    ) : (
-                      <span className="text-red-600 dark:text-red-400">Suspended</span>
-                    )}
-                  </td>
-                  <td className="py-3 flex flex-wrap gap-1">
-                    {u.role !== 'super_admin' && !u.isVerified && (
-                      <button type="button" onClick={() => handleVerify(u)} className="p-1.5 rounded bg-green-600 text-white hover:bg-green-700" title="Verify">
-                        <Check size={14} />
-                      </button>
-                    )}
-                    {u.role !== 'super_admin' && u.isActive && (
-                      <button type="button" onClick={() => handleSuspend(u)} className="p-1.5 rounded bg-amber-600 text-white hover:bg-amber-700" title="Suspend">
-                        <Pause size={14} />
-                      </button>
-                    )}
-                    {u.role !== 'super_admin' && !u.isActive && (
-                      <button type="button" onClick={() => handleReactivate(u)} className="p-1.5 rounded bg-blue-600 text-white hover:bg-blue-700" title="Reactivate">
-                        <Play size={14} />
-                      </button>
-                    )}
-                    {u.role !== 'super_admin' && (
-                      <button type="button" onClick={() => setModal({ open: true, user: u, newPassword: '' })} className="p-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700" title="Reset password">
-                        <Key size={14} />
-                      </button>
-                    )}
-                    {u.role !== 'super_admin' && (
-                      <button type="button" onClick={() => handleDelete(u)} className="p-1.5 rounded border border-red-300 text-red-600 hover:bg-red-50 dark:bg-red-900/20" title="Delete">
-                        <Trash2 size={14} />
-                      </button>
-                    )}
-                  </td>
+        <>
+          <div className="md:hidden space-y-4">
+            {users.map((u) => (
+              <article key={u._id} className="card space-y-3">
+                <div className="min-w-0">
+                  <h3 className="font-semibold text-gray-900 dark:text-white break-words">{u.name}</h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 break-all">{u.email}</p>
+                </div>
+                <dl className="space-y-2 text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-gray-600 dark:text-gray-400 shrink-0">Role</dt>
+                    <dd className="flex flex-wrap items-center justify-end gap-2">{renderRoleControl(u)}</dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-gray-600 dark:text-gray-400 shrink-0">Organization</dt>
+                    <dd className="font-medium text-right break-words">{u.organizationId?.name || '—'}</dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-gray-600 dark:text-gray-400 shrink-0">Verified</dt>
+                    <dd>
+                      {u.role === 'super_admin' ? (
+                        '—'
+                      ) : u.isVerified ? (
+                        <span className="text-green-600 dark:text-green-400">Yes</span>
+                      ) : (
+                        <span className="text-amber-600 dark:text-amber-400">Pending</span>
+                      )}
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-gray-600 dark:text-gray-400 shrink-0">Status</dt>
+                    <dd>
+                      {u.isActive ? (
+                        <span className="text-green-600 dark:text-green-400">Active</span>
+                      ) : (
+                        <span className="text-red-600 dark:text-red-400">Suspended</span>
+                      )}
+                    </dd>
+                  </div>
+                </dl>
+                {renderActions(u)}
+              </article>
+            ))}
+          </div>
+
+          <div className="hidden md:block card overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-gray-200 dark:border-gray-700">
+                  <th className="pb-3 font-medium">Name</th>
+                  <th className="pb-3 font-medium">Email</th>
+                  <th className="pb-3 font-medium">Role</th>
+                  <th className="pb-3 font-medium">Organization</th>
+                  <th className="pb-3 font-medium">Verified</th>
+                  <th className="pb-3 font-medium">Status</th>
+                  <th className="pb-3 font-medium">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {users.map((u) => (
+                  <tr key={u._id} className="border-b border-gray-100 dark:border-gray-800">
+                    <td className="py-3">{u.name}</td>
+                    <td className="py-3 text-sm text-gray-600 dark:text-gray-400">{u.email}</td>
+                    <td className="py-3">
+                      <div className="flex flex-wrap items-center gap-2">{renderRoleControl(u)}</div>
+                    </td>
+                    <td className="py-3 text-sm">{u.organizationId?.name || '—'}</td>
+                    <td className="py-3">
+                      {u.role === 'super_admin' ? (
+                        '—'
+                      ) : u.isVerified ? (
+                        <span className="text-green-600 dark:text-green-400">Yes</span>
+                      ) : (
+                        <span className="text-amber-600 dark:text-amber-400">Pending</span>
+                      )}
+                    </td>
+                    <td className="py-3">
+                      {u.isActive ? (
+                        <span className="text-green-600 dark:text-green-400">Active</span>
+                      ) : (
+                        <span className="text-red-600 dark:text-red-400">Suspended</span>
+                      )}
+                    </td>
+                    <td className="py-3">{renderActions(u)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {modal.open && (

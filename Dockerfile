@@ -1,6 +1,8 @@
 # Backend Dockerfile
 FROM node:18-alpine
 
+RUN apk add --no-cache ffmpeg
+
 WORKDIR /app
 
 # Copy package files

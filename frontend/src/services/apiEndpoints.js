@@ -54,3 +54,8 @@ export const assignOperatorsToCamera = (cameraId, operatorIds, replace = true) =
   api.put(`/cameras/${cameraId}/operators`, { operatorIds, replace });
 export const restoreCamera = (id) => api.put(`/cameras/${id}/restore`);
 export const permanentDeleteCamera = (id) => api.delete(`/cameras/${id}/permanent`);
+
+// Incidents (AI)
+export const getIncidents = (params) => api.get('/incidents', { params });
+export const getIncident = (id) => api.get(`/incidents/${id}`);
+export const getIncidentStats = (params) => api.get('/incidents/stats', { params });

@@ -8,6 +8,10 @@ const PAGE_TITLES = {
     title: 'Dashboard',
     subtitle: 'Your account overview',
   },
+  '/customer/downgrade-prep': {
+    title: 'Reduce cameras',
+    subtitle: 'Prepare for a smaller plan before renewal',
+  },
   '/customer/plans': {
     title: 'Plans',
     subtitle: 'Browse subscription plans',

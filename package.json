@@ -4,9 +4,10 @@
   "description": "AI-Based Smart Fire Detection and Emergency Monitoring System",
   "main": "server.js",
   "scripts": {
-    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "dev": "concurrently -n server,client,inference -c blue,green,magenta \"npm run server\" \"npm run client\" \"npm run inference\"",
     "server": "nodemon backend/server.js",
     "client": "cd frontend && npm run dev",
+    "inference": "cd python-services/inference && python -m app.main",
     "build": "cd frontend && npm run build",
     "start": "node backend/server.js",
     "install-all": "npm install && cd frontend && npm install"
@@ -20,7 +21,6 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@tensorflow/tfjs": "^4.22.0",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",

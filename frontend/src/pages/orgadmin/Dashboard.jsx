@@ -1,9 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchAlerts, fetchAlertStats } from '../../store/slices/alertSlice';
 import { fetchCameras } from '../../store/slices/cameraSlice';
+import { getIncidents } from '../../services/apiEndpoints';
 import { isCameraOnline } from '../../utils/camera';
-import { Camera, AlertTriangle, Users, Activity } from 'lucide-react';
+import { Camera, AlertTriangle, Activity, Flame } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const OrgAdminDashboard = () => {
@@ -11,11 +12,15 @@ const OrgAdminDashboard = () => {
   const { stats } = useSelector((state) => state.alerts);
   const { cameras } = useSelector((state) => state.cameras);
   const { alerts } = useSelector((state) => state.alerts);
+  const [activeIncidents, setActiveIncidents] = useState([]);
 
   useEffect(() => {
     dispatch(fetchAlertStats());
     dispatch(fetchCameras());
     dispatch(fetchAlerts({ limit: 10 }));
+    getIncidents({ status: 'active', limit: 20 })
+      .then((res) => setActiveIncidents(res.data.data || []))
+      .catch(() => setActiveIncidents([]));
   }, [dispatch]);
 
   const onlineCameras = cameras.filter((c) => isCameraOnline(c.status)).length;
@@ -74,6 +79,43 @@ const OrgAdminDashboard = () => {
           );
         })}
       </div>
+
+      {activeIncidents.length > 0 && (
+        <div className="card border border-red-200 dark:border-red-900/50">
+          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+            <Flame className="text-red-500" size={22} />
+            Active fire/smoke incidents
+          </h2>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-200 dark:border-gray-700">
+                  <th className="text-left py-3 px-4">Camera ID</th>
+                  <th className="text-left py-3 px-4">Camera</th>
+                  <th className="text-left py-3 px-4">Started</th>
+                  <th className="text-left py-3 px-4">Freq / min</th>
+                  <th className="text-left py-3 px-4">Spread est.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activeIncidents.map((inc) => (
+                  <tr key={inc._id} className="border-b border-gray-100 dark:border-gray-800">
+                    <td className="py-3 px-4 text-xs font-mono">{inc.cameraId?._id || inc.cameraId}</td>
+                    <td className="py-3 px-4">
+                      {inc.cameraId?.displayNumber || inc.cameraId?.label || 'Camera'}
+                    </td>
+                    <td className="py-3 px-4 text-sm">
+                      {inc.startedAt ? new Date(inc.startedAt).toLocaleString() : '—'}
+                    </td>
+                    <td className="py-3 px-4">{Number(inc.detectionFrequencyPerMin || 0).toFixed(0)}</td>
+                    <td className="py-3 px-4">{Number(inc.estimatedSpreadRate || 0).toFixed(4)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Recent Alerts */}
       <div className="card">

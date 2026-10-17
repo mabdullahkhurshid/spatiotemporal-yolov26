@@ -1,9 +1,8 @@
 const Alert = require('../models/Alert');
 const Camera = require('../models/Camera');
-const Notification = require('../models/Notification');
 const User = require('../models/User');
 const OperatorCameraAssignment = require('../models/OperatorCameraAssignment');
-const { sendAlertEmail } = require('../services/emailService');
+const { createAlertFromDetection } = require('../services/alertCreationService');
 
 // @desc    Get all alerts (OPERATOR: only alerts for assigned cameras)
 // @route   GET /api/alerts
@@ -114,6 +113,10 @@ exports.createAlert = async (req, res, next) => {
       coordinates,
       averageConfidence,
       frameSnapshotURL,
+      boundingBoxes,
+      incidentId,
+      primaryClass,
+      metricsSnapshot,
     } = req.body;
 
     const camera = await Camera.findById(cameraId);
@@ -124,79 +127,21 @@ exports.createAlert = async (req, res, next) => {
       });
     }
 
-    // Determine intensity level if not provided
-    let intensity = intensityLevel;
-    const avgConfidence = typeof averageConfidence === 'number'
-      ? averageConfidence
-      : (fireConfidence + smokeConfidence) / 2;
-
-    if (!intensity) {
-      if (avgConfidence >= 80) intensity = 'critical';
-      else if (avgConfidence >= 60) intensity = 'high';
-      else if (avgConfidence >= 40) intensity = 'medium';
-      else intensity = 'low';
-    }
-
-    const alert = await Alert.create({
-      cameraId,
-      organizationId: camera.organizationId,
+    const alert = await createAlertFromDetection({
+      io: req.io,
+      camera,
       fireConfidence,
       smokeConfidence,
-      averageConfidence: avgConfidence,
-      intensityLevel: intensity,
+      averageConfidence,
+      intensityLevel,
       alertImage,
       frameSnapshotURL,
       coordinates,
-      actions: [
-        {
-          type: 'CREATED',
-          byUserId: req.user?._id,
-          note: 'Alert created by AI detection',
-        },
-      ],
-    });
-
-    // Populate for response
-    await alert.populate('cameraId organizationId');
-
-    // Create notifications for organization admins and operators
-    const users = await User.find({
-      organizationId: camera.organizationId,
-      role: { $in: ['org_admin', 'operator'] },
-      isActive: true,
-      isDeleted: false,
-    });
-
-    const notifications = users.map((user) => ({
-      userId: user._id,
-      organizationId: camera.organizationId,
-      alertId: alert._id,
-      type: 'alert',
-      title: `Fire Alert: ${camera.label}`,
-      message: `Fire detected with ${fireConfidence}% confidence. Intensity: ${intensity}`,
-      priority: intensity === 'critical' || intensity === 'high' ? 'critical' : 'high',
-    }));
-
-    await Notification.insertMany(notifications);
-
-    // Send email notifications to admins
-    const admins = users.filter((u) => u.role === 'org_admin');
-    for (const admin of admins) {
-      try {
-        await sendAlertEmail(admin, alert, camera);
-      } catch (emailError) {
-        console.error('Email send error:', emailError);
-      }
-    }
-
-    // Emit socket event (organization room + generic event)
-    const alertObj = alert.toObject();
-    req.io.to(`org:${camera.organizationId}`).emit('alert:new', {
-      alert: alertObj,
-    });
-    req.io.emit(`alert:${camera.organizationId}`, {
-      type: 'new_alert',
-      alert: alertObj,
+      boundingBoxes,
+      incidentId,
+      primaryClass,
+      metricsSnapshot,
+      createdByUserId: req.user?._id,
     });
 
     res.status(201).json({

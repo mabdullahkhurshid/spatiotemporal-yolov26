@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { getMySubscription } from '../../services/subscriptionApi';
 import { Package, Camera, Users, Calendar, CreditCard } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -103,6 +104,12 @@ const OrgAdminSubscription = () => {
   const currency = plan?.currency || 'USD';
   const billingCycle = subscription?.billingCycle || plan?.billingCycle || 'monthly';
   const status = subscription?.status || organization?.subscriptionStatus || 'pending';
+  const orgSubscriptionStatus = organization?.subscriptionStatus;
+  const showRenewLink =
+    status === 'expired' ||
+    status === 'cancelled' ||
+    orgSubscriptionStatus === 'expired' ||
+    orgSubscriptionStatus === 'cancelled';
   const startDate = subscription?.startDate || organization?.subscriptionStartDate;
   const endDate = subscription?.endDate || organization?.subscriptionEndDate;
   const camerasUsed = subscription?.camerasUsed ?? 0;
@@ -118,6 +125,21 @@ const OrgAdminSubscription = () => {
           View your current plan, usage limits, and billing history
         </p>
       </div>
+
+      {showRenewLink && (
+        <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4">
+          <p className="font-semibold text-amber-900 dark:text-amber-100">
+            This subscription is {status}.
+          </p>
+          <p className="text-sm text-amber-800 dark:text-amber-200 mt-1">
+            Renew the same organization from the account portal. Cameras stay in place when the
+            plan fits your current usage.
+          </p>
+          <Link to="/customer/plans" className="btn-primary inline-flex mt-4 text-sm">
+            Renew or change plan
+          </Link>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="card">

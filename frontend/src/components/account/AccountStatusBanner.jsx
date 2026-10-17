@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { AlertTriangle, Ban, Clock } from 'lucide-react';
 
 const AccountStatusBanner = ({ flags, organization, subscription }) => {
@@ -35,6 +36,12 @@ const AccountStatusBanner = ({ flags, organization, subscription }) => {
             Your subscription ended on {expiryDate?.toLocaleDateString() || '—'}. Renew your plan
             to restore full access.
           </p>
+          <Link
+            to="/customer/plans"
+            className="inline-flex mt-3 text-sm font-semibold text-red-800 dark:text-red-200 underline"
+          >
+            Renew plan
+          </Link>
         </div>
       </div>
     );
@@ -50,7 +57,7 @@ const AccountStatusBanner = ({ flags, organization, subscription }) => {
           </p>
           <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
             Your plan expires in {daysUntilExpiry} day{daysUntilExpiry === 1 ? '' : 's'} (
-            {expiryDate.toLocaleDateString()}).
+            {expiryDate.toLocaleDateString()}). You can renew after {expiryDate.toLocaleDateString()}.
           </p>
         </div>
       </div>

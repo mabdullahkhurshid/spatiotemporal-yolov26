@@ -1,6 +1,12 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Organization = require('../models/Organization');
+const Subscription = require('../models/Subscription');
+const {
+  syncExpiredSubscriptionState,
+  isSubscriptionTermActive,
+  isExpiredDeprovisionEligible,
+} = require('../utils/subscriptionTerm');
 const AuditLog = require('../models/AuditLog');
 
 // Protect routes - verify JWT token
@@ -106,12 +112,7 @@ exports.requireActiveSubscription = async (req, res, next) => {
       });
     }
 
-    // Auto-expire subscriptions based on end date
-    const now = new Date();
-    if (org.subscriptionEndDate && org.subscriptionEndDate < now && org.subscriptionStatus !== 'expired') {
-      org.subscriptionStatus = 'expired';
-      await org.save();
-    }
+    await syncExpiredSubscriptionState(org);
 
     if (org.status === 'SUSPENDED') {
       return res.status(403).json({
@@ -129,6 +130,92 @@ exports.requireActiveSubscription = async (req, res, next) => {
 
     req.organization = org;
     next();
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+const CAMERA_DEPROVISION_RESERVED = new Set(['usage', 'deleted']);
+
+/** Allowlist for org_admin camera shrink while subscription expired (cameras router paths). */
+const isCameraDeprovisionAllowlisted = (req) => {
+  const method = req.method.toUpperCase();
+  const path = (req.path || '/').split('?')[0];
+  const segments = path.split('/').filter(Boolean);
+
+  if (method === 'GET' && segments.length === 0) {
+    return true;
+  }
+  if (method === 'GET' && segments.length === 1 && segments[0] === 'usage') {
+    return true;
+  }
+  if (method === 'DELETE' && segments.length === 1 && !CAMERA_DEPROVISION_RESERVED.has(segments[0])) {
+    return true;
+  }
+
+  return false;
+};
+
+/**
+ * Active subscription required, except org_admin may list/delete cameras on allowlisted routes when expired.
+ */
+exports.requireActiveSubscriptionUnlessDeprovision = async (req, res, next) => {
+  try {
+    if (req.user.role === 'super_admin' || req.user.role === 'customer') {
+      return next();
+    }
+    if (!req.user.organizationId) {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not assigned to an organization.',
+      });
+    }
+
+    const org = await Organization.findOne({
+      _id: req.user.organizationId,
+      isDeleted: false,
+    });
+
+    if (!org) {
+      return res.status(403).json({
+        success: false,
+        message: 'Organization not found.',
+      });
+    }
+
+    await syncExpiredSubscriptionState(org);
+
+    if (org.status === 'SUSPENDED') {
+      return res.status(403).json({
+        success: false,
+        message: 'Your organization is suspended. Please contact support.',
+      });
+    }
+
+    const subscription = await Subscription.findOne({ organizationId: org._id });
+
+    if (isSubscriptionTermActive({ organization: org, subscription })) {
+      req.organization = org;
+      return next();
+    }
+
+    if (
+      isExpiredDeprovisionEligible({ user: req.user, organization: org, subscription }) &&
+      isCameraDeprovisionAllowlisted(req)
+    ) {
+      req.organization = org;
+      req.deprovisionMode = true;
+      return next();
+    }
+
+    return res.status(403).json({
+      success: false,
+      message: 'Your subscription is not active. Please renew your plan.',
+    });
   } catch (error) {
     return res.status(500).json({
       success: false,

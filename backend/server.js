@@ -1,4 +1,5 @@
 const express = require('express');
+const path = require('path');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -56,7 +57,10 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
+
 // Routes
+app.use('/api/internal/inference', require('./routes/internalInference'));
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/public', require('./routes/public'));
 app.use('/api/users', require('./routes/users'));
@@ -68,6 +72,7 @@ app.use('/api/cameras', require('./routes/cameras'));
 app.use('/api/operator-assignments', require('./routes/operatorAssignments'));
 app.use('/api/alerts', require('./routes/alerts'));
 app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/incidents', require('./routes/incidents'));
 
 // Health check
 app.get('/health', (req, res) => {

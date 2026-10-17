@@ -116,6 +116,13 @@ exports.getCamera = async (req, res, next) => {
 // @access  Private (Super Admin, Org Admin)
 exports.createCamera = async (req, res, next) => {
   try {
+    if (req.deprovisionMode) {
+      return res.status(403).json({
+        success: false,
+        message: 'Your subscription is not active. Renew your plan to add cameras.',
+      });
+    }
+
     const { name, label, ipAddress, streamUrl, location, organizationId, installationDate, metadata, cameraType, displayNumber, settings } = req.body;
 
     const orgId = organizationId || req.user.organizationId;
@@ -180,6 +187,13 @@ exports.createCamera = async (req, res, next) => {
 // @route   PUT /api/cameras/:id
 // @access  Private (Super Admin, Org Admin)
 exports.updateCamera = async (req, res, next) => {
+  if (req.deprovisionMode) {
+    return res.status(403).json({
+      success: false,
+      message: 'Your subscription is not active. Renew your plan to edit cameras.',
+    });
+  }
+
   try {
     let camera = await Camera.findById(req.params.id);
 

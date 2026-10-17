@@ -386,7 +386,82 @@ const SuperAdminOrders = () => {
             </div>
           ) : (
             <>
-              <div className={`overflow-x-auto ${refreshing ? 'pointer-events-none' : ''}`}>
+              <div className={`md:hidden divide-y divide-gray-200 dark:divide-gray-700 ${refreshing ? 'pointer-events-none' : ''}`}>
+                {loading
+                  ? Array.from({ length: 3 }, (_, row) => (
+                      <div key={`mobile-skeleton-${row}`} className="py-4 space-y-3">
+                        <div className="h-4 w-24 rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
+                        <div className="h-4 w-full rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
+                        <div className="h-4 w-2/3 rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
+                      </div>
+                    ))
+                  : filteredOrders.map((order) => (
+                      <div
+                        key={order._id}
+                        className="py-4 space-y-3 cursor-pointer"
+                        onClick={() => openOrderDetail(order)}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="text-sm font-mono font-medium text-gray-700 dark:text-gray-300">
+                            {formatOrderId(order._id)}
+                          </p>
+                          <span
+                            className={`px-2 py-1 rounded text-xs capitalize shrink-0 ${accountStatusBadgeClass(order.status)}`}
+                          >
+                            {order.status}
+                          </span>
+                        </div>
+                        <dl className="space-y-2 text-sm">
+                          <div className="flex items-center justify-between gap-3">
+                            <dt className="text-gray-600 dark:text-gray-400 shrink-0">Date</dt>
+                            <dd className="whitespace-nowrap text-right">{formatAccountDate(order.createdAt)}</dd>
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <dt className="text-gray-600 dark:text-gray-400 shrink-0">Organization</dt>
+                            <dd className="font-medium text-right break-words">
+                              {resolveOrgName(order)}
+                              {order.organizationId?.isDeleted && (
+                                <span className="ml-2 text-xs text-red-600 dark:text-red-400">(deleted)</span>
+                              )}
+                            </dd>
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <dt className="text-gray-600 dark:text-gray-400 shrink-0">Plan</dt>
+                            <dd className="text-right">{resolvePlanLabel(order)}</dd>
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <dt className="text-gray-600 dark:text-gray-400 shrink-0">Amount</dt>
+                            <dd className="whitespace-nowrap text-right">{formatAccountCurrency(order.amount)}</dd>
+                          </div>
+                        </dl>
+                        <div className="flex flex-wrap gap-1" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => openOrderDetail(order)}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                          >
+                            <Eye size={16} /> View
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => openEditModal(order, e)}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                          >
+                            <Pencil size={16} /> Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteOrder(order, e)}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                          >
+                            <Trash2 size={16} /> Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+              </div>
+
+              <div className={`hidden md:block overflow-x-auto ${refreshing ? 'pointer-events-none' : ''}`}>
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-gray-200 dark:border-gray-700">
@@ -433,7 +508,7 @@ const SuperAdminOrders = () => {
                             <td className="py-3 px-4 text-sm font-mono text-gray-700 dark:text-gray-300">
                               {formatOrderId(order._id)}
                             </td>
-                            <td className="py-3 px-4 text-sm">{formatAccountDate(order.createdAt)}</td>
+                            <td className="py-3 px-4 text-sm whitespace-nowrap">{formatAccountDate(order.createdAt)}</td>
                             <td className="py-3 px-4 text-sm">
                               <span className="font-medium">{resolveOrgName(order)}</span>
                               {order.organizationId?.isDeleted && (

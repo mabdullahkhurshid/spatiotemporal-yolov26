@@ -4,7 +4,7 @@
 
 This project is a **production-ready, multi-tenant AI disaster monitoring framework** designed for **early fire and smoke detection** in critical infrastructure. It combines:
 
-- **Edge AI** (spatiotemporal deep learning model for fire/smoke),
+- **Edge AI** (YOLOv26 spatiotemporal fire/smoke surveillance via ONNX),
 - **IoT sensors** (gas and temperature),
 - A **MERN web platform** (React, Node.js, Express, MongoDB),
 - **JWT-based authentication** with **role-based access control**, and
@@ -36,7 +36,7 @@ There is a growing need for an **intelligent, multi-modal, real-time fire and sm
 
 The system provides a **Spatiotemporal AI Disaster Resilience Framework** with:
 
-- A **3D CNN + lightweight Transformer** model for **fire & smoke detection** on video,
+- **YOLOv26** object detection with **spatiotemporal incident tracking** for fire & smoke on video,
 - **Temporal validation** & **confidence smoothing** to reduce false alarms,
 - Architectural hooks for **sensor fusion** (gas + temperature),
 - A **multi-tenant, role-based web portal** for monitoring and administration,
@@ -51,9 +51,9 @@ The system provides a **Spatiotemporal AI Disaster Resilience Framework** with:
 ### 4.1 High-Level Components
 
 - **Edge AI Layer**
-  - Raspberry Pi / edge device with CCTV feed.
-  - Spatiotemporal fire & smoke model (TensorFlow / TensorFlow.js).
-  - Optional integration with Arduino-based **gas** and **temperature** sensors.
+  - Raspberry Pi / edge device with CCTV feed (optional).
+  - **Python inference sidecar** running **YOLOv26 ONNX** (CPU-first; GPU optional in cloud).
+  - Optional integration with Arduino-based **gas** and **temperature** sensors (architecture hooks; not required for video detection).
 
 - **Backend (Node.js + Express + MongoDB)**
   - Multi-tenant data model (organizations, cameras, users, subscriptions).
@@ -63,8 +63,8 @@ The system provides a **Spatiotemporal AI Disaster Resilience Framework** with:
 
 - **Frontend (React + Vite + Redux Toolkit)**
   - Dashboards for **SUPER_ADMIN**, **ORG_ADMIN**, and **OPERATOR**.
-  - Live camera grid with **TensorFlow.js inference** and confidence overlays.
-  - Real-time alerts, notifications, and analytics.
+  - Live camera grid with **server-side detection overlays** (`detection:live` via Socket.io).
+  - Real-time alerts, notifications, and incident analytics.
 
 - **Real-Time Layer (Socket.io)**
   - Organization-scoped rooms (`org:<organizationId>`) for alerts and camera status.
@@ -72,10 +72,10 @@ The system provides a **Spatiotemporal AI Disaster Resilience Framework** with:
 
 ### 4.2 Logical Architecture Diagram (Textual)
 
-- **Edge Device**
-  - Captures frames from CCTV.
-  - Runs spatiotemporal model → `fireConfidence`, `smokeConfidence`.
-  - Sends structured detections / alerts to backend via HTTPS or WebSocket.
+- **Inference worker**
+  - Reads CCTV streams (RTSP / MJPEG).
+  - Runs **YOLOv26 ONNX** → bounding boxes, class scores, incident timeline.
+  - Posts ingest payloads to the Node backend; backend creates alerts and Socket.io events.
 
 - **Backend**
   - Validates organization and camera.
@@ -99,7 +99,6 @@ The system provides a **Spatiotemporal AI Disaster Resilience Framework** with:
   - Tailwind CSS
   - Recharts (analytics)
   - Socket.io Client
-  - TensorFlow.js (`@tensorflow/tfjs`)
 
 - **Backend**
   - Node.js + Express
@@ -110,9 +109,8 @@ The system provides a **Spatiotemporal AI Disaster Resilience Framework** with:
   - Helmet, CORS, Express Rate Limit
 
 - **AI / ML**
-  - Python 3 (for training)
-  - TensorFlow / Keras
-  - TensorFlow.js Converter
+  - Python 3 + **ONNX Runtime** (`python-services/inference`)
+  - **YOLOv26** weights exported to `best.onnx` (training in Colab/Roboflow, outside this repo)
 
 - **Hardware**
   - Raspberry Pi with camera module (CCTV ingestion)
@@ -142,14 +140,15 @@ At a high level:
 │  │  ├─ components/       # Shared UI components
 │  │  ├─ services/         # Axios API client, Socket service
 │  │  ├─ store/            # Redux Toolkit slices (auth, alerts, cameras, notifications)
-│  │  ├─ hooks/            # Custom hooks (e.g., useFireSmokeDetection)
+│  │  ├─ hooks/            # e.g. useLiveDetection (server AI overlays)
 │  │  └─ main.jsx, App.jsx # App bootstrap & routing
 │  └─ public/
-│     └─ models/           # TF.js model assets (model.json + shards)
 │
-├─ ml/                     # Python training & TF.js conversion utilities
-│  ├─ train_fire_smoke_model.py
-│  └─ convert_to_tfjs.md
+├─ python-services/
+│  └─ inference/           # YOLO ONNX CPU worker (live CCTV → backend)
+│     ├─ app/
+│     ├─ config/classes.json
+│     └─ weights/          # best.onnx (gitignored; train in Colab/Roboflow)
 │
 ├─ .env                    # Environment configuration (local)
 ├─ package.json            # Root scripts to run backend + frontend
@@ -164,7 +163,8 @@ At a high level:
 
 - Node.js 18+ and npm
 - MongoDB (local or remote)
-- Python 3.9+ (for training the model)
+- Python 3.10+ (for the inference worker)
+- ffmpeg (for RTSP preview in the browser)
 - Git (optional, for version control)
 
 ### 7.2 Environment Setup
@@ -201,116 +201,40 @@ This starts:
 
 - Backend server at `http://localhost:5000`
 - Frontend (Vite dev) at `http://localhost:5173`
+- Python inference worker (`python -m app.main`)
+
+`npm run inference` starts only the worker.
 
 ---
 
-## 8. AI Model Setup
+## 8. AI model & inference (YOLOv26 / ONNX)
 
-### 8.1 Model Architecture (ML Phase)
+Training is done **outside** this repo (e.g. Google Colab + Roboflow, **YOLOv26**). Runtime lives in **`python-services/inference/`**.
 
-The Python script `ml/train_fire_smoke_model.py` implements a **spatiotemporal model**:
-
-- **3D CNN stem** for spatio-temporal feature extraction,
-- **Residual 3D blocks** for stable training,
-- **Spatial attention** over feature maps,
-- **Temporal transformer encoder** with **positional encoding**,
-- **Positional Gating Unit (PGU)** for time-dependent gating,
-- Multi-head outputs:
-  - `fire_conf` (fire confidence, 0–1),
-  - `smoke_conf` (smoke confidence, 0–1),
-  - `binary` (fire/smoke presence, 0–1).
-
-The architecture is designed to be **lightweight enough** for edge deployment, with configurable input size and sequence length.
-
-### 8.2 Training (Offline)
-
-In a Python virtual environment:
+1. Export **`best.onnx`** from Colab and place it in `python-services/inference/weights/` (gitignored).
+2. Set the same `INFERENCE_SERVICE_API_KEY` in root `.env` and `python-services/inference/.env`.
+3. Install Python dependencies once, then start the worker with the rest of the app:
 
 ```bash
-cd ml
-pip install -r requirements.txt  # if you create one
-python train_fire_smoke_model.py --epochs 10 --batch_size 8
+cd python-services/inference
+pip install -r requirements.txt
+cd ../..
+npm run dev
 ```
 
-This:
+The worker polls enabled cameras, runs **ONNX Runtime on CPU**, posts to `POST /api/internal/inference/ingest`, and the backend creates alerts plus Socket.io `detection:live` events.
 
-- Constructs the model with the desired configuration,
-- Trains on your fire/smoke datasets (extend the script’s dataset loader),
-- Exports a TensorFlow **SavedModel** under `ml_output/saved_model`.
-
-> **Note:** For a real deployment, replace the dummy dataset in the script with actual fire/smoke video datasets and negative samples (fog, clouds, fire-colored objects, etc.).
-
-### 8.3 TF.js Conversion
-
-Use the guide in `ml/convert_to_tfjs.md`. Typical command:
-
-```bash
-tensorflowjs_converter \
-  --input_format=tf_saved_model \
-  --output_format=tfjs_graph_model \
-  --quantization_bytes=2 \
-  ./ml_output/saved_model \
-  ./frontend/public/models/fire_smoke_tfjs
-```
-
-This creates:
-
-- `frontend/public/models/fire_smoke_tfjs/model.json`
-- weight shard `.bin` files
-
-These are then served directly by the frontend.
+See `python-services/inference/README.md` for env vars.
 
 ---
 
-## 9. TensorFlow.js Integration Guide
+## 9. Frontend live view & overlays
 
-### 9.1 Frontend Model Loading
+- **Server AI (default):** `useLiveDetection` and `DetectionOverlayCanvas` in the camera fullscreen modal; boxes arrive via Socket.io `detection:live`.
+- **RTSP cameras:** `GET /api/cameras/:id/stream/mjpeg` (ffmpeg proxy on the backend).
+- **HTTP MJPEG:** uses `streamUrl` directly in a `<video>` element.
 
-The frontend uses **TensorFlow.js** with the **WebGL backend**:
-
-- A shared loader is implemented in a custom hook: `src/hooks/useFireSmokeDetection.js`.
-- The model is loaded once and cached across components:
-  - URL from `VITE_TFJS_MODEL_URL` or default `/models/fire_smoke_tfjs/model.json`.
-
-### 9.2 Live Inference Pipeline
-
-For each camera tile:
-
-1. A `<video>` element displays the **live CCTV stream** (e.g., from `camera.streamUrl`).
-2. `useFireSmokeDetection`:
-   - Captures frames from the video element every **X milliseconds**:
-     - Configurable via `VITE_DETECTION_INTERVAL_MS` (default `500` ms).
-   - Resizes the frame to the model’s expected input (e.g. `112 × 112`).
-   - Normalizes pixels and runs inference via TF.js + WebGL.
-   - Produces:
-     - `fireConfidence` (0–100%),
-     - `smokeConfidence` (0–100%),
-     - `binaryConfidence` (0–100%).
-3. The hook maintains a **sliding window** of recent predictions to:
-   - Compute average confidence,
-   - Enforce **N consecutive detections**.
-
-4. When the conditions are satisfied and a **cooldown** period has passed, the hook sends an alert to the backend via:
-
-```http
-POST /api/alerts
-```
-
-with `cameraId`, `fireConfidence`, `smokeConfidence`, and `averageConfidence`.
-
-### 9.3 Configuration Knobs
-
-Defined as Vite environment variables (in `frontend/.env` or `.env.local`):
-
-- `VITE_TFJS_MODEL_URL` – TF.js model URL (default: `/models/fire_smoke_tfjs/model.json`)
-- `VITE_DETECTION_INTERVAL_MS` – inference interval per camera (default: `500`)
-- `VITE_FIRE_THRESHOLD` – fire confidence threshold (default: `70`)
-- `VITE_SMOKE_THRESHOLD` – smoke confidence threshold (default: `70`)
-- `VITE_MIN_CONSECUTIVE` – min consecutive frames above threshold (default: `3`)
-- `VITE_WINDOW_SIZE` – number of recent frames for averaging (default: `5`)
-- `VITE_ALERT_COOLDOWN_MS` – alert debounce / cooldown in ms (default: `60000`)
-
-These allow tuning the trade-off between **sensitivity**, **false alarms**, and **performance**.
+Optional: `VITE_AI_MODE=server` (default).
 
 ---
 
@@ -318,12 +242,8 @@ These allow tuning the trade-off between **sensitivity**, **false alarms**, and 
 
 ### 10.1 Raspberry Pi (Edge AI + CCTV)
 
-- Runs a lightweight client application that:
-  - Pulls frames from an attached camera or IP CCTV stream.
-  - Either:
-    - Runs the **TF.js / TF Lite model locally** (edge inference), and sends **only confidences** to backend, or
-    - Streams video to the central server for browser-side inference.
-- Communicates with the backend via HTTPS or WebSocket, sending structured data:
+- Can run the same **`python-services/inference`** worker locally, or forward streams to a central inference host.
+- Communicates with the backend via HTTPS, sending structured detection/incident data (example shape):
 
 ```json
 {
@@ -614,8 +534,8 @@ Core production recommendations:
 ## 16. Performance & Scalability Considerations
 
 - **Under 2 seconds end-to-end latency**
-  - Per-camera inference throttling via `VITE_DETECTION_INTERVAL_MS`.
-  - Temporal validation and cooldown to avoid alert storms.
+  - Per-camera inference interval in the Python worker (default ~500ms; see `python-services/inference`).
+  - Incident tracker temporal validation and alert cooldown to avoid alert storms.
   - Socket.io for instant push to clients.
 
 - **Horizontal scalability**
@@ -624,7 +544,7 @@ Core production recommendations:
   - Socket.io can scale with a Redis adapter for multi-instance setups.
 
 - **Future microservice separation**
-  - Dedicated **inference service** (Node + `@tensorflow/tfjs-node` or Python TF) for heavy models.
+  - Scale **`python-services/inference`** horizontally (GPU nodes optional).
   - Separate **notification service** for email/SMS/push.
   - **Message queue** (Kafka/RabbitMQ) between detection, alerting, and notification services.
 

@@ -9,6 +9,7 @@ const PlanCardGrid = ({
   onSubscribe,
   subscribeLabel = 'Subscribe',
   disableSubscribe = false,
+  planCapacityHint,
   emptyMessage = 'Subscription plans are not configured yet. Please contact the system administrator.',
   className = '',
 }) => {
@@ -48,6 +49,7 @@ const PlanCardGrid = ({
           onSubscribe={onSubscribe}
           subscribeLabel={subscribeLabel}
           disabled={disableSubscribe}
+          capacityHint={planCapacityHint?.(plan) || ''}
         />
       ))}
     </div>

@@ -246,7 +246,7 @@ protect → requireActiveOrganization → requireVerifiedUser → requireActiveS
 | `superadmin/Orders.jsx` | ❌ Stub | Literal text: "Orders management page - Implementation pending" |
 | `superadmin/Alerts.jsx` | ✅ Full (not modified this iteration) | |
 | `orgadmin/Dashboard.jsx` | ✅ Full | Stat cards + recent alerts table |
-| `orgadmin/Cameras.jsx` | ✅ Full | Live tiles + `useFireSmokeDetection` integration |
+| `orgadmin/Cameras.jsx` | ✅ Full | Live tiles + server inference overlay (`useLiveDetection`) |
 | `orgadmin/Alerts.jsx` | ✅ Full (not modified this iteration) | |
 | `orgadmin/Operators.jsx` | ✅ Full | Add/delete operator, assign cameras |
 | `orgadmin/Reports.jsx` | ❌ Stub | Literal text: "Reports page - Implementation pending" |
@@ -295,7 +295,7 @@ From `.env.example` (root):
 | `RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX_REQUESTS` | Global rate limiter | Defaults: 15 min / 100 requests, applied uniformly to all of `/api/*` |
 | `MAX_FILE_SIZE` | Declared but **no file upload middleware (multer/etc.) found anywhere in the codebase** — this variable is currently unused | N/A |
 
-Frontend (`frontend/.env.example`, inferred from usage in code): `VITE_API_URL`, `VITE_SOCKET_URL`, `VITE_TFJS_MODEL_URL`, `VITE_FIRE_THRESHOLD`, `VITE_SMOKE_THRESHOLD`, `VITE_MIN_CONSECUTIVE`, `VITE_WINDOW_SIZE`, `VITE_ALERT_COOLDOWN_MS`, `VITE_DETECTION_INTERVAL_MS`.
+Frontend (`frontend/.env.example`): `VITE_API_URL`, `VITE_SOCKET_URL`. Optional: `VITE_AI_MODE=server` (default) for server-side YOLOv26 overlays.
 
 **Gap:** `CONTACT_EMAIL` is referenced in `emailService.js` but not documented in `.env.example` — a deployer following the example file alone would not know to set it.
 
@@ -335,7 +335,7 @@ To distinguish net-new implementation work from the pre-existing baseline, based
 - `socketHandlers.js`: `join:user`/`leave:user` room handlers
 - Frontend: `PendingVerification.jsx` rewritten for real-time approval; `SuperAdminSubscriptionPlans.jsx` rewritten as a full table with create/edit modals; `LandingPage.jsx` contact form wired to the new API with badges added to pricing cards; `utils/roleRoutes.js` (new helper); `authSlice.markUserVerified`; `socketService.js` `join:user`/`user:verified` wiring; `apiEndpoints.js`/`publicApi.js` new function exports; `seedSubscriptionPlans.js` updated with default pricing
 
-**Pre-existing (unchanged this cycle):** authentication core, camera/alert lifecycle, operator assignment, organization approval workflow, TensorFlow.js detection pipeline, dashboards for all three roles, Google OAuth, email verification/reset flows.
+**Pre-existing (unchanged this cycle):** authentication core, camera/alert lifecycle, operator assignment, organization approval workflow, Python YOLOv26 inference sidecar + server overlay UI, dashboards for all three roles, Google OAuth, email verification/reset flows.
 
 ---
 

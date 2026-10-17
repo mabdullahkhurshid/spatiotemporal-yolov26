@@ -100,6 +100,7 @@ import ProfileViewPage from "./pages/customer/ProfileViewPage";
 import ProfileEditPage from "./pages/customer/ProfileEditPage";
 
 import SubscribePage from "./pages/customer/SubscribePage";
+import DowngradePrepPage from "./pages/customer/DowngradePrepPage";
 
 import { getDashboardPathForRole, PORTAL_ROLES } from "./utils/roleRoutes";
 
@@ -357,6 +358,8 @@ function App() {
 
         <Route path="plans" element={<CustomerPlansPage />} />
 
+        <Route path="downgrade-prep" element={<DowngradePrepPage />} />
+
         <Route path="subscription" element={<CustomerSubscriptionPage />} />
 
         <Route path="help" element={<CustomerHelpPage />} />
@@ -374,7 +377,7 @@ function App() {
 
           element={
 
-            <ProtectedRoute allowedRoles={["customer"]}>
+            <ProtectedRoute allowedRoles={PORTAL_ROLES}>
 
               <SubscribePage />
 
@@ -390,7 +393,7 @@ function App() {
 
           element={
 
-            <ProtectedRoute allowedRoles={["customer"]}>
+            <ProtectedRoute allowedRoles={PORTAL_ROLES}>
 
               <SubscribePage />
 

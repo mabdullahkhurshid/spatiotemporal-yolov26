@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
@@ -24,10 +24,10 @@ import {
 const SubscriptionPage = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const showSuccess = searchParams.get('success') === '1';
-
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
+  const [completionNotice, setCompletionNotice] = useState(null);
+  const completionHandled = useRef(false);
 
   useEffect(() => {
     const load = async () => {
@@ -45,12 +45,23 @@ const SubscriptionPage = () => {
   }, []);
 
   useEffect(() => {
-    if (showSuccess) {
-      toast.success('Subscription activated successfully!');
-      searchParams.delete('success');
-      setSearchParams(searchParams, { replace: true });
+    if (completionHandled.current || searchParams.get('success') !== '1') {
+      return;
     }
-  }, [showSuccess, searchParams, setSearchParams]);
+
+    completionHandled.current = true;
+
+    const renewed = searchParams.get('renewed') === '1';
+    setCompletionNotice(renewed ? 'renewed' : 'purchase');
+    toast.success(
+      renewed ? 'Subscription renewed successfully!' : 'Subscription activated successfully!',
+    );
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('success');
+    nextParams.delete('renewed');
+    setSearchParams(nextParams, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   if (loading) {
     return <SubscriptionPageSkeleton />;
@@ -97,7 +108,19 @@ const SubscriptionPage = () => {
         </p>
       </div>
 
-      {showSuccess && (
+      {completionNotice === 'renewed' && (
+        <div className="rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 p-4">
+          <p className="font-semibold text-green-800 dark:text-green-200">
+            Subscription renewed
+          </p>
+          <p className="text-sm text-green-700 dark:text-green-300 mt-1">
+            Your plan is active again with updated billing dates. Open your org dashboard to
+            manage cameras and operators.
+          </p>
+        </div>
+      )}
+
+      {completionNotice === 'purchase' && (
         <div className="rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 p-4">
           <p className="font-semibold text-green-800 dark:text-green-200">
             Welcome! Your subscription is now active.
@@ -273,10 +296,10 @@ const SubscriptionPage = () => {
         )}
       </div>
 
-      {!flags?.hasActiveSubscription && (
+      {flags?.hasOrganization && !flags?.hasActiveSubscription && !flags?.isOrgSuspended && (
         <div className="text-center">
           <button type="button" onClick={() => navigate('/customer/plans')} className="btn-primary">
-            View Plans
+            Renew or change plan
           </button>
         </div>
       )}

@@ -4,6 +4,10 @@ const Organization = require('../models/Organization');
 const Order = require('../models/Order');
 const User = require('../models/User');
 const { generateToken, generateRefreshToken } = require('../utils/generateToken');
+const {
+  isSubscriptionTermActive,
+  getOrganizationUsageCounts,
+} = require('../utils/subscriptionTerm');
 
 // Helper to compute end date from duration months
 const addMonths = (date, months) => {
@@ -86,27 +90,43 @@ exports.checkoutSubscription = async (req, res, next) => {
         });
       }
 
+      if (organization.status === 'SUSPENDED') {
+        return res.status(403).json({
+          success: false,
+          message: 'Your organization is suspended. Please contact support.',
+        });
+      }
+
       const existingSubscription = await Subscription.findOne({
         organizationId: organization._id,
       });
 
-      const hasActiveOrg =
-        organization.status === 'ACTIVE' &&
-        organization.subscriptionStatus === 'active';
-
-      const hasActiveSubscription =
-        existingSubscription?.status === 'active' &&
-        existingSubscription?.endDate > new Date();
-
       if (
-        user.role === 'org_admin' &&
-        hasActiveOrg &&
-        hasActiveSubscription &&
-        existingSubscription?.planId?.toString() === planId.toString()
+        isSubscriptionTermActive({
+          organization,
+          subscription: existingSubscription,
+        })
       ) {
         return res.status(400).json({
           success: false,
-          message: 'You already have an active subscription for this plan',
+          message:
+            'You already have an active subscription. You can change plans after it expires.',
+        });
+      }
+
+      const { cameraCount, operatorCount } = await getOrganizationUsageCounts(organization._id);
+
+      if (cameraCount > plan.maxCameras) {
+        return res.status(400).json({
+          success: false,
+          message: `This plan allows ${plan.maxCameras} cameras and your organization has ${cameraCount}. Remove cameras or choose a larger plan.`,
+        });
+      }
+
+      if (operatorCount > plan.maxOperators) {
+        return res.status(400).json({
+          success: false,
+          message: `This plan allows ${plan.maxOperators} operators and your organization has ${operatorCount}. Remove operators or choose a larger plan.`,
         });
       }
     } else {
