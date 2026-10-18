@@ -1,59 +1,35 @@
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 
-// Generate JWT Token
+// Generate JWT access token (kept in memory by the SPA, sent as a Bearer header)
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRE || '7d',
+    expiresIn: process.env.JWT_EXPIRE || '15m',
   });
 };
 
-// Generate Refresh Token
+// Generate refresh token; jti makes every token unique even when minted in the same second
 const generateRefreshToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_REFRESH_SECRET, {
+  return jwt.sign({ id, jti: crypto.randomUUID() }, process.env.JWT_REFRESH_SECRET, {
     expiresIn: process.env.JWT_REFRESH_EXPIRE || '30d',
   });
 };
 
-// Send token response
-const sendTokenResponse = (user, statusCode, res) => {
-  const accessToken = generateToken(user._id);
-  const refreshToken = generateRefreshToken(user._id);
+// Short-lived token that only authorizes the MJPEG proxy for one camera (used in <img src>).
+// A separate secret ensures it can never be accepted as an access token.
+const streamSecret = () => `${process.env.JWT_SECRET}:camera-stream`;
 
-  // Save refresh token to user
-  user.refreshToken = refreshToken;
-  user.save({ validateBeforeSave: false });
-
-  const options = {
-    expires: new Date(Date.now() + (process.env.JWT_COOKIE_EXPIRE || 7) * 24 * 60 * 60 * 1000),
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-  };
-
-  const org = user.organizationId && typeof user.organizationId === 'object' ? user.organizationId : null;
-
-  res.status(statusCode).cookie('accessToken', accessToken, options).cookie('refreshToken', refreshToken, options).json({
-    success: true,
-    accessToken,
-    refreshToken,
-    user: {
-      id: user._id,
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      organizationId: org || user.organizationId,
-      organizationName: org?.name || null,
-      phone: user.phone,
-      avatar: user.avatar,
-      isEmailVerified: user.isEmailVerified,
-      isVerified: user.isVerified,
-    },
+const generateStreamToken = (userId, cameraId) => {
+  return jwt.sign({ sub: String(userId), cam: String(cameraId) }, streamSecret(), {
+    expiresIn: parseInt(process.env.CAMERA_STREAM_TOKEN_TTL_SEC, 10) || 60,
   });
 };
+
+const verifyStreamToken = (token) => jwt.verify(token, streamSecret());
 
 module.exports = {
   generateToken,
   generateRefreshToken,
-  sendTokenResponse,
+  generateStreamToken,
+  verifyStreamToken,
 };

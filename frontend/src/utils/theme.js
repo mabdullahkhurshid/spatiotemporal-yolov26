@@ -37,9 +37,30 @@ export const applyDarkMode = (isDark) => {
   document.documentElement.classList.toggle('dark', isDark);
 };
 
+const THEME_EVENT = 'fireguard:themechange';
+
+const notify = (isDark) => {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(THEME_EVENT, { detail: isDark }));
+};
+
 export const setTheme = (isDark) => {
   localStorage.setItem(THEME_KEY, isDark ? 'dark' : 'light');
   applyDarkMode(isDark);
+  notify(isDark);
+};
+
+/** 'light' | 'dark' | 'system' */
+export const getThemePreference = () => getStoredTheme() || 'system';
+
+export const setThemePreference = (preference) => {
+  if (preference === 'system') {
+    localStorage.removeItem(THEME_KEY);
+    const isDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+    applyDarkMode(isDark);
+    notify(isDark);
+    return;
+  }
+  setTheme(preference === 'dark');
 };
 
 export const toggleTheme = () => {
@@ -61,8 +82,15 @@ export const subscribeToThemeChanges = (callback) => {
     }
   };
 
+  // Same-tab changes (top bar toggle, settings page) arrive as a custom event.
+  const handleLocal = (event) => callback(Boolean(event.detail));
+
   window.addEventListener('storage', handleStorage);
-  return () => window.removeEventListener('storage', handleStorage);
+  window.addEventListener(THEME_EVENT, handleLocal);
+  return () => {
+    window.removeEventListener('storage', handleStorage);
+    window.removeEventListener(THEME_EVENT, handleLocal);
+  };
 };
 
 export const subscribeToSystemTheme = (callback) => {

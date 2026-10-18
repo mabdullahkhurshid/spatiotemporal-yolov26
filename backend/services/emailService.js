@@ -28,6 +28,10 @@ if (process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS) 
   console.warn('Email service not configured. Set EMAIL_HOST, EMAIL_USER, and EMAIL_PASS in .env to enable email features.');
 }
 
+// Names, camera labels and contact messages are user input; escape them before placing them in HTML.
+const escapeHtml = (value) =>
+  String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+
 // Send email
 const sendEmail = async (options) => {
   if (!transporter) {
@@ -63,7 +67,7 @@ const sendVerificationEmail = async (user, otp) => {
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <h2 style="color: #dc2626;">Email Verification</h2>
-      <p>Hello ${user.name},</p>
+      <p>Hello ${escapeHtml(user.name)},</p>
       <p>Thank you for registering with Fire Detection System. Please verify your email address using the OTP below:</p>
       <div style="background-color: #f3f4f6; padding: 20px; text-align: center; margin: 20px 0;">
         <h1 style="color: #dc2626; font-size: 32px; letter-spacing: 5px; margin: 0;">${otp}</h1>
@@ -89,7 +93,7 @@ const sendPasswordResetEmail = async (user, resetToken) => {
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <h2 style="color: #dc2626;">Password Reset Request</h2>
-      <p>Hello ${user.name},</p>
+      <p>Hello ${escapeHtml(user.name)},</p>
       <p>You requested to reset your password. Click the button below to reset it:</p>
       <div style="text-align: center; margin: 30px 0;">
         <a href="${resetUrl}" style="background-color: #dc2626; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">Reset Password</a>
@@ -117,8 +121,8 @@ const sendAlertEmail = async (user, alert, camera) => {
       <h2 style="color: #dc2626;">🚨 Fire Alert Detected</h2>
       <div style="background-color: #fee2e2; border-left: 4px solid #dc2626; padding: 15px; margin: 20px 0;">
         <h3 style="color: #991b1b; margin-top: 0;">Alert Details</h3>
-        <p><strong>Camera:</strong> ${camera.label}</p>
-        <p><strong>Location:</strong> ${camera.location}</p>
+        <p><strong>Camera:</strong> ${escapeHtml(camera.label)}</p>
+        <p><strong>Location:</strong> ${escapeHtml(camera.location)}</p>
         <p><strong>Fire Confidence:</strong> ${alert.fireConfidence}%</p>
         <p><strong>Smoke Confidence:</strong> ${alert.smokeConfidence}%</p>
         <p><strong>Intensity:</strong> ${alert.intensityLevel.toUpperCase()}</p>
@@ -142,11 +146,11 @@ const sendOperatorWelcomeEmail = async (user, plainPassword, loginUrl) => {
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <h2 style="color: #dc2626;">Welcome to Fire Detection System</h2>
-      <p>Hello ${user.name},</p>
+      <p>Hello ${escapeHtml(user.name)},</p>
       <p>Your operator account has been created. Use the credentials below to sign in:</p>
       <div style="background-color: #f3f4f6; padding: 20px; margin: 20px 0; border-radius: 8px;">
-        <p style="margin: 0 0 8px;"><strong>Username:</strong> ${user.email}</p>
-        <p style="margin: 0;"><strong>Password:</strong> ${plainPassword}</p>
+        <p style="margin: 0 0 8px;"><strong>Username:</strong> ${escapeHtml(user.email)}</p>
+        <p style="margin: 0;"><strong>Password:</strong> ${escapeHtml(plainPassword)}</p>
       </div>
       <div style="text-align: center; margin: 30px 0;">
         <a href="${loginUrl}" style="background-color: #dc2626; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">Sign In</a>
@@ -187,11 +191,11 @@ const sendContactNotificationEmail = async (contact) => {
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <h2 style="color: #dc2626;">New Contact Inquiry</h2>
-      <p><strong>From:</strong> ${contact.name} &lt;${contact.email}&gt;</p>
-      ${contact.organization ? `<p><strong>Organization:</strong> ${contact.organization}</p>` : ''}
-      <p><strong>Subject:</strong> ${contact.subject || 'General inquiry'}</p>
+      <p><strong>From:</strong> ${escapeHtml(contact.name)} &lt;${escapeHtml(contact.email)}&gt;</p>
+      ${contact.organization ? `<p><strong>Organization:</strong> ${escapeHtml(contact.organization)}</p>` : ''}
+      <p><strong>Subject:</strong> ${escapeHtml(contact.subject || 'General inquiry')}</p>
       <div style="background-color: #f3f4f6; padding: 16px; margin: 16px 0; border-radius: 8px;">
-        <p style="margin: 0; white-space: pre-wrap;">${contact.message}</p>
+        <p style="margin: 0; white-space: pre-wrap;">${escapeHtml(contact.message)}</p>
       </div>
       <p style="color: #6b7280; font-size: 12px;">Received at ${new Date(contact.createdAt || Date.now()).toLocaleString()}</p>
     </div>
@@ -205,6 +209,7 @@ const sendContactNotificationEmail = async (contact) => {
 };
 
 module.exports = {
+  escapeHtml,
   sendEmail,
   sendVerificationEmail,
   sendPasswordResetEmail,

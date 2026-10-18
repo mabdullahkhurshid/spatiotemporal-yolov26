@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import ast
 import json
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
 import numpy as np
 import onnxruntime as ort
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -19,14 +23,55 @@ class Detection:
     h: float
 
     def to_dict(self) -> dict:
+        # Coordinates come from numpy (float32); cast so the payload is JSON serializable.
         return {
             "className": self.class_name,
-            "confidence": round(self.confidence * 100, 2),
-            "x": round(self.x, 6),
-            "y": round(self.y, 6),
-            "w": round(self.w, 6),
-            "h": round(self.h, 6),
+            "confidence": round(float(self.confidence) * 100, 2),
+            "x": round(float(self.x), 6),
+            "y": round(float(self.y), 6),
+            "w": round(float(self.w), 6),
+            "h": round(float(self.h), 6),
         }
+
+
+def _model_class_names(session: ort.InferenceSession) -> list[str] | None:
+    """Read Ultralytics `names` metadata (e.g. "{0: 'fire', 1: 'other', 2: 'smoke'}") in index order."""
+    raw = session.get_modelmeta().custom_metadata_map.get("names")
+    if not raw:
+        return None
+    try:
+        names = ast.literal_eval(raw)
+    except (ValueError, SyntaxError):
+        logger.warning("Could not parse model class names metadata: %r", raw)
+        return None
+    if isinstance(names, dict):
+        return [str(names[k]) for k in sorted(names, key=int)]
+    if isinstance(names, (list, tuple)):
+        return [str(n) for n in names]
+    return None
+
+
+PAD_VALUE = 114  # Ultralytics letterbox padding colour
+MAX_WH = 7680  # Ultralytics class offset for class-aware NMS
+MAX_DET = 300
+
+
+def letterbox(frame_bgr: np.ndarray, size: int) -> tuple[np.ndarray, float, int, int]:
+    """Aspect-preserving resize + centred padding, matching ultralytics.data.augment.LetterBox (auto=False).
+
+    Returns (image, ratio, pad_left, pad_top).
+    """
+    h, w = frame_bgr.shape[:2]
+    r = min(size / h, size / w)
+    new_w, new_h = round(w * r), round(h * r)
+    dw, dh = (size - new_w) / 2, (size - new_h) / 2
+    img = frame_bgr
+    if (w, h) != (new_w, new_h):
+        img = cv2.resize(frame_bgr, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+    top, bottom = round(dh - 0.1), round(dh + 0.1)
+    left, right = round(dw - 0.1), round(dw + 0.1)
+    img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=(PAD_VALUE,) * 3)
+    return img, r, left, top
 
 
 def _nms(boxes: np.ndarray, scores: np.ndarray, iou_threshold: float) -> list[int]:
@@ -77,17 +122,29 @@ class YoloOnnxDetector:
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
 
-    def _preprocess(self, frame_bgr: np.ndarray) -> tuple[np.ndarray, float, float]:
-        h, w = frame_bgr.shape[:2]
-        img = cv2.resize(frame_bgr, (self.input_size, self.input_size))
+        # The exported model records its own class order; a mismatched classes.json would swap labels.
+        model_names = _model_class_names(self.session)
+        if model_names:
+            if model_names != self.class_names:
+                logger.warning(
+                    "classes.json names %s differ from model metadata %s; using model metadata",
+                    self.class_names,
+                    model_names,
+                )
+            self.class_names = model_names
+
+    def _preprocess(self, frame_bgr: np.ndarray) -> tuple[np.ndarray, float, int, int]:
+        # Letterbox like Ultralytics training/inference; stretching distorts non-square CCTV frames.
+        img, ratio, pad_left, pad_top = letterbox(frame_bgr, self.input_size)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img = img.astype(np.float32) / 255.0
         img = np.transpose(img, (2, 0, 1))
         img = np.expand_dims(img, axis=0)
-        return img, w, h
+        return np.ascontiguousarray(img), ratio, pad_left, pad_top
 
     def predict(self, frame_bgr: np.ndarray) -> list[Detection]:
-        tensor, orig_w, orig_h = self._preprocess(frame_bgr)
+        orig_h, orig_w = frame_bgr.shape[:2]
+        tensor, ratio, pad_left, pad_top = self._preprocess(frame_bgr)
         outputs = self.session.run([self.output_name], {self.input_name: tensor})
         raw = outputs[0]
         if raw.ndim == 3:
@@ -111,19 +168,17 @@ class YoloOnnxDetector:
         if len(boxes_xywh) == 0:
             return []
 
-        scale_x = orig_w / self.input_size
-        scale_y = orig_h / self.input_size
-        cx = boxes_xywh[:, 0] * scale_x
-        cy = boxes_xywh[:, 1] * scale_y
-        bw = boxes_xywh[:, 2] * scale_x
-        bh = boxes_xywh[:, 3] * scale_y
-        x1 = cx - bw / 2
-        y1 = cy - bh / 2
-        x2 = cx + bw / 2
-        y2 = cy + bh / 2
+        # Undo letterbox: remove padding, then scale back to the original frame (as ultralytics scale_boxes).
+        cx, cy, bw, bh = boxes_xywh[:, 0], boxes_xywh[:, 1], boxes_xywh[:, 2], boxes_xywh[:, 3]
+        x1 = np.clip((cx - bw / 2 - pad_left) / ratio, 0, orig_w)
+        y1 = np.clip((cy - bh / 2 - pad_top) / ratio, 0, orig_h)
+        x2 = np.clip((cx + bw / 2 - pad_left) / ratio, 0, orig_w)
+        y2 = np.clip((cy + bh / 2 - pad_top) / ratio, 0, orig_h)
         boxes_xyxy = np.stack([x1, y1, x2, y2], axis=1)
 
-        keep = _nms(boxes_xyxy, confidences, self.iou_threshold)
+        # Class-aware NMS (Ultralytics default): overlapping fire and smoke boxes are both kept.
+        offsets = class_ids[:, None].astype(np.float32) * MAX_WH
+        keep = _nms(boxes_xyxy + offsets, confidences, self.iou_threshold)[:MAX_DET]
         detections: list[Detection] = []
         for idx in keep:
             x1i, y1i, x2i, y2i = boxes_xyxy[idx]

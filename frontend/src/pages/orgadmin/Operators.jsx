@@ -1,4 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { MoreHorizontal, Pause, Pencil, Play, Plus, Trash2, Users, Video } from 'lucide-react';
+import toast from 'react-hot-toast';
 import {
   getUsers,
   createUser,
@@ -10,19 +13,34 @@ import {
   assignCamerasToOperator,
 } from '../../services/apiEndpoints';
 import api from '../../services/api';
-import { Link } from 'react-router-dom';
-import { Plus, Trash2, Camera, Pencil, Pause, Play } from 'lucide-react';
-import toast from 'react-hot-toast';
+import PageHeader from '../../components/ui/PageHeader';
+import Button from '../../components/ui/Button';
+import IconButton from '../../components/ui/IconButton';
+import Card from '../../components/ui/Card';
+import Menu from '../../components/ui/Menu';
+import Avatar from '../../components/ui/Avatar';
+import Dialog from '../../components/ui/Dialog';
+import DataTable from '../../components/ui/DataTable';
+import { StatusBadge } from '../../components/ui/Badge';
+import { EmptyState, Notice } from '../../components/ui/Feedback';
+import { Field, Input, SearchInput } from '../../components/ui/Field';
+import { useConfirm } from '../../components/ui/confirmContext';
+import { cameraTitle } from '../../utils/camera';
+import { cn } from '../../utils/cn';
 
 const emptyModal = { open: false, type: 'add', operator: null, name: '', email: '', password: '' };
 
 const OrgAdminOperators = () => {
+  const confirm = useConfirm();
   const [operators, setOperators] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [cameras, setCameras] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState('');
   const [modal, setModal] = useState(emptyModal);
-  const [assignModal, setAssignModal] = useState({ open: false, operator: null, selectedCameraIds: [], allCameras: [] });
+  const [modalError, setModalError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [assignModal, setAssignModal] = useState({ open: false, operator: null, selectedCameraIds: [] });
 
   const loadOperators = async () => {
     try {
@@ -39,8 +57,8 @@ const OrgAdminOperators = () => {
     try {
       const response = await getOperatorAssignments({});
       setAssignments(response.data.data);
-    } catch (error) {
-      // ignore
+    } catch {
+      toast.error('Failed to load camera assignments');
     }
   };
 
@@ -48,7 +66,7 @@ const OrgAdminOperators = () => {
     try {
       const response = await api.get('/cameras');
       setCameras(response.data.data);
-    } catch (error) {
+    } catch {
       toast.error('Failed to load cameras');
     }
   };
@@ -59,46 +77,58 @@ const OrgAdminOperators = () => {
     loadCameras();
   }, []);
 
-  const handleAddOperator = (e) => {
-    e.preventDefault();
-    const { name, email, password } = modal;
-    if (!name || !email || !password || password.length < 6) {
-      toast.error('Name, email and password (min 6 chars) required');
-      return;
-    }
-    createUser({ name, email, password, role: 'operator' })
-      .then(() => {
-        toast.success('Operator added');
-        setModal(emptyModal);
-        loadOperators();
-      })
-      .catch((err) => toast.error(err.response?.data?.message || 'Failed to add operator'));
+  const camerasFor = (operatorId) => assignments.filter((a) => a.operatorId?._id === operatorId).map((a) => a.cameraId).filter(Boolean);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q ? operators.filter((o) => `${o.name} ${o.email}`.toLowerCase().includes(q)) : operators;
+  }, [operators, query]);
+
+  const openAdd = () => {
+    setModalError('');
+    setModal({ ...emptyModal, open: true });
   };
 
-  const handleEditOperator = (e) => {
-    e.preventDefault();
-    const { operator, name, password } = modal;
-    if (!operator || !name) {
-      toast.error('Name is required');
-      return;
-    }
-    if (password && password.length < 6) {
-      toast.error('Password must be at least 6 characters');
-      return;
-    }
-    const payload = { name };
-    if (password) payload.password = password;
+  const openEdit = (operator) => {
+    setModalError('');
+    setModal({ open: true, type: 'edit', operator, name: operator.name, email: operator.email, password: '' });
+  };
 
-    updateUser(operator._id, payload)
-      .then(() => {
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const { type, operator, name, email, password } = modal;
+    if (!name.trim()) return setModalError('Name is required.');
+    if (type === 'add' && (!email || !password)) return setModalError('Email and a temporary password are required.');
+    if (password && password.length < 6) return setModalError('Password must be at least 6 characters.');
+    setSaving(true);
+    setModalError('');
+    try {
+      if (type === 'add') {
+        await createUser({ name: name.trim(), email: email.trim(), password, role: 'operator' });
+        toast.success('Operator added — sign-in details were emailed to them');
+      } else {
+        const payload = { name: name.trim() };
+        if (password) payload.password = password;
+        await updateUser(operator._id, payload);
         toast.success('Operator updated');
-        setModal(emptyModal);
-        loadOperators();
-      })
-      .catch((err) => toast.error(err.response?.data?.message || 'Failed to update operator'));
+      }
+      setModal(emptyModal);
+      loadOperators();
+    } catch (err) {
+      setModalError(err.response?.data?.message || 'Could not save the operator.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleSuspend = async (operator) => {
+    const ok = await confirm({
+      title: `Deactivate ${operator.name}?`,
+      description: 'They are signed out everywhere and cannot sign in until you activate them again. Camera assignments are kept.',
+      confirmLabel: 'Deactivate',
+      tone: 'danger',
+    });
+    if (!ok) return;
     try {
       await suspendUser(operator._id);
       toast.success('Operator deactivated');
@@ -119,8 +149,13 @@ const OrgAdminOperators = () => {
   };
 
   const handleDelete = async (operator) => {
-    const confirmMessage = `Permanently delete operator "${operator.name}" (${operator.email})? They will be removed from the database, login will be blocked immediately, and their email will be available for new signup. This cannot be undone.`;
-    if (!window.confirm(confirmMessage)) return;
+    const ok = await confirm({
+      title: `Delete ${operator.name}?`,
+      description: `${operator.email} is removed permanently and signed out immediately. Their email can be used for a new account. This cannot be undone.`,
+      confirmLabel: 'Delete operator',
+      tone: 'danger',
+    });
+    if (!ok) return;
     try {
       const res = await deleteUser(operator._id);
       toast.success(res?.data?.message || 'Operator deleted');
@@ -131,259 +166,228 @@ const OrgAdminOperators = () => {
     }
   };
 
-  const openEditModal = (operator) => {
-    setModal({
-      open: true,
-      type: 'edit',
-      operator,
-      name: operator.name,
-      email: operator.email,
-      password: '',
-    });
+  const openAssign = (operator) => {
+    setAssignModal({ open: true, operator, selectedCameraIds: camerasFor(operator._id).map((c) => c._id) });
   };
 
-  const openAssignModal = (operator) => {
-    const existing = assignments.filter((a) => a.operatorId?._id === operator._id).map((a) => a.cameraId?._id);
-    setAssignModal({
-      open: true,
-      operator,
-      selectedCameraIds: existing,
-      allCameras: cameras,
-    });
-  };
-
-  const handleAssignCameras = () => {
+  const handleAssignCameras = async () => {
     if (!assignModal.operator) return;
-    assignCamerasToOperator(assignModal.operator._id, assignModal.selectedCameraIds)
-      .then(() => {
-        toast.success('Cameras assigned');
-        setAssignModal({ open: false, operator: null, selectedCameraIds: [], allCameras: [] });
-        loadAssignments();
-      })
-      .catch((err) => toast.error(err.response?.data?.message || 'Failed to assign'));
+    setSaving(true);
+    try {
+      await assignCamerasToOperator(assignModal.operator._id, assignModal.selectedCameraIds);
+      toast.success('Camera access updated');
+      setAssignModal({ open: false, operator: null, selectedCameraIds: [] });
+      loadAssignments();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to assign');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const toggleCamera = (cameraId) => {
+  const toggleCamera = (cameraId) =>
     setAssignModal((m) => ({
       ...m,
-      selectedCameraIds: m.selectedCameraIds.includes(cameraId)
-        ? m.selectedCameraIds.filter((id) => id !== cameraId)
-        : [...m.selectedCameraIds, cameraId],
+      selectedCameraIds: m.selectedCameraIds.includes(cameraId) ? m.selectedCameraIds.filter((id) => id !== cameraId) : [...m.selectedCameraIds, cameraId],
     }));
-  };
 
-  const getAssignedCount = (operatorId) =>
-    assignments.filter((a) => a.operatorId?._id === operatorId).length;
+  const columns = [
+    {
+      key: 'operator',
+      header: 'Operator',
+      primary: true,
+      cell: (op) => (
+        <div className="flex min-w-0 items-center gap-3">
+          <Avatar name={op.name} email={op.email} size="sm" />
+          <div className="min-w-0">
+            <p className="truncate font-medium text-fg">{op.name}</p>
+            <p className="truncate text-xs text-fg-muted">{op.email}</p>
+          </div>
+        </div>
+      ),
+    },
+    { key: 'status', header: 'Status', cell: (op) => <StatusBadge kind="user" value={op.isActive ? 'active' : 'suspended'} /> },
+    {
+      key: 'cameras',
+      header: 'Camera access',
+      cell: (op) => {
+        const list = camerasFor(op._id);
+        if (!list.length) return <span className="text-sm text-fg-subtle">No cameras</span>;
+        return (
+          <span className="text-sm text-fg" title={list.map(cameraTitle).join(', ')}>
+            {list.slice(0, 2).map(cameraTitle).join(', ')}
+            {list.length > 2 && <span className="text-fg-muted"> +{list.length - 2} more</span>}
+          </span>
+        );
+      },
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      align: 'right',
+      cell: (op) => (
+        <div className="flex justify-end gap-1.5">
+          <Button size="sm" variant="secondary" icon={Video} onClick={() => openAssign(op)}>
+            Cameras
+          </Button>
+          <Menu
+            width="w-48"
+            items={[
+              { label: 'Edit details', icon: Pencil, onClick: () => openEdit(op) },
+              op.isActive ? { label: 'Deactivate', icon: Pause, onClick: () => handleSuspend(op) } : { label: 'Activate', icon: Play, onClick: () => handleReactivate(op) },
+              { divider: true },
+              { label: 'Delete operator', icon: Trash2, tone: 'danger', onClick: () => handleDelete(op) },
+            ]}
+            trigger={(props) => <IconButton {...props} icon={MoreHorizontal} label={`More actions for ${op.name}`} size="sm" />}
+          />
+        </div>
+      ),
+    },
+  ];
 
-  const closeModal = () => setModal(emptyModal);
+  const isAdd = modal.type === 'add';
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Operators</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">Add operators and assign cameras</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setModal({ open: true, type: 'add', operator: null, name: '', email: '', password: '' })}
-          className="btn-primary flex items-center gap-2"
-        >
-          <Plus size={20} />
-          Add Operator
-        </button>
-      </div>
+    <div>
+      <PageHeader
+        title="Operators"
+        description="People who watch cameras and respond to alerts. Each operator sees only the cameras you assign."
+        actions={
+          <Button icon={Plus} onClick={openAdd}>
+            Add operator
+          </Button>
+        }
+      />
 
-      {loading ? (
-        <div className="text-center py-12">Loading...</div>
-      ) : (
-        <div className="card overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="border-b border-gray-200 dark:border-gray-700">
-                <th className="pb-3 font-medium">Name</th>
-                <th className="pb-3 font-medium">Email</th>
-                <th className="pb-3 font-medium">Status</th>
-                <th className="pb-3 font-medium">Assigned cameras</th>
-                <th className="pb-3 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {operators.map((op) => (
-                <tr key={op._id} className="border-b border-gray-100 dark:border-gray-800">
-                  <td className="py-3">{op.name}</td>
-                  <td className="py-3 text-sm text-gray-600 dark:text-gray-400">{op.email}</td>
-                  <td className="py-3">
-                    {op.isActive ? (
-                      <span className="text-green-600 dark:text-green-400">Active</span>
-                    ) : (
-                      <span className="text-red-600 dark:text-red-400">Inactive</span>
-                    )}
-                  </td>
-                  <td className="py-3">{getAssignedCount(op._id)}</td>
-                  <td className="py-3 flex flex-wrap gap-1">
-                    <button
-                      type="button"
-                      onClick={() => openEditModal(op)}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
-                      title="Edit credentials"
-                    >
-                      <Pencil size={14} /> Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openAssignModal(op)}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
-                    >
-                      <Camera size={14} /> Assign cameras
-                    </button>
-                    {op.isActive ? (
-                      <button
-                        type="button"
-                        onClick={() => handleSuspend(op)}
-                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm hover:bg-amber-700"
-                        title="Deactivate"
-                      >
-                        <Pause size={14} /> Deactivate
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => handleReactivate(op)}
-                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-600 text-white text-sm hover:bg-green-700"
-                        title="Activate"
-                      >
-                        <Play size={14} /> Activate
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(op)}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-red-300 text-red-600 dark:border-red-700 dark:text-red-400 text-sm hover:bg-red-50 dark:hover:bg-red-900/20"
-                    >
-                      <Trash2 size={14} /> Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {operators.length === 0 && (
-            <p className="py-8 text-center text-gray-500 dark:text-gray-400">No operators yet. Add one to get started.</p>
-          )}
-        </div>
-      )}
-
-      {modal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 max-w-sm w-full mx-4">
-            <h3 className="text-lg font-semibold mb-4">{modal.type === 'edit' ? 'Edit Operator' : 'Add Operator'}</h3>
-            <form onSubmit={modal.type === 'edit' ? handleEditOperator : handleAddOperator} className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium mb-1">Name <span className="text-red-500">*</span></label>
-                <input
-                  value={modal.name}
-                  onChange={(e) => setModal((m) => ({ ...m, name: e.target.value }))}
-                  className="w-full rounded-lg border dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2"
-                  required
-                />
-              </div>
-              {modal.type === 'add' ? (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Email <span className="text-red-500">*</span></label>
-                    <input
-                      type="email"
-                      value={modal.email}
-                      onChange={(e) => setModal((m) => ({ ...m, email: e.target.value }))}
-                      className="w-full rounded-lg border dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Password (min 6) <span className="text-red-500">*</span></label>
-                    <input
-                      type="password"
-                      value={modal.password}
-                      onChange={(e) => setModal((m) => ({ ...m, password: e.target.value }))}
-                      className="w-full rounded-lg border dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2"
-                      minLength={6}
-                      required
-                    />
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Email</label>
-                    <input
-                      type="email"
-                      value={modal.email}
-                      readOnly
-                      className="w-full rounded-lg border dark:border-gray-600 bg-gray-100 dark:bg-gray-700/50 px-3 py-2 text-gray-600 dark:text-gray-400"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">New password (optional, min 6)</label>
-                    <input
-                      type="password"
-                      value={modal.password}
-                      onChange={(e) => setModal((m) => ({ ...m, password: e.target.value }))}
-                      placeholder="Leave blank to keep current password"
-                      className="w-full rounded-lg border dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2"
-                      minLength={6}
-                    />
-                  </div>
-                </>
-              )}
-              <div className="flex justify-end gap-2 pt-4">
-                <button type="button" onClick={closeModal} className="px-4 py-2 rounded-lg border dark:border-gray-600">Cancel</button>
-                <button type="submit" className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">
-                  {modal.type === 'edit' ? 'Save' : 'Add'}
-                </button>
-              </div>
-            </form>
+      <Card>
+        {operators.length > 0 && (
+          <div className="border-b border-line px-4 py-3 sm:px-5">
+            <SearchInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name or email" label="Search operators" className="sm:max-w-xs" />
           </div>
-        </div>
-      )}
+        )}
+        <DataTable
+          caption="Operators"
+          columns={columns}
+          rows={filtered}
+          loading={loading}
+          empty={
+            <EmptyState
+              icon={Users}
+              title={query ? 'No operators match your search' : 'No operators yet'}
+              description={query ? undefined : 'Add operators so they can monitor cameras and respond to alerts.'}
+              action={
+                !query && (
+                  <Button icon={Plus} onClick={openAdd}>
+                    Add operator
+                  </Button>
+                )
+              }
+            />
+          }
+        />
+      </Card>
 
-      {assignModal.open && assignModal.operator && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold mb-2">Assign cameras to {assignModal.operator.name}</h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">Select cameras this operator can view.</p>
-            {assignModal.allCameras.length === 0 ? (
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                No cameras yet.{' '}
-                <Link to="/orgadmin/cameras" className="text-primary-600 hover:text-primary-700 font-medium">
-                  Add cameras on the Cameras page
-                </Link>{' '}
-                first.
-              </p>
-            ) : (
-              <div className="space-y-2 mb-4">
-                {assignModal.allCameras.map((cam) => (
-                  <label key={cam._id} className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={assignModal.selectedCameraIds.includes(cam._id)}
-                      onChange={() => toggleCamera(cam._id)}
-                      className="rounded"
-                    />
-                    <span>
-                      {cam.displayNumber || cam.name || cam.label} — {cam.location}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            )}
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setAssignModal({ open: false, operator: null, selectedCameraIds: [], allCameras: [] })} className="px-4 py-2 rounded-lg border dark:border-gray-600">Cancel</button>
-              <button type="button" onClick={handleAssignCameras} className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700">Save</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Dialog
+        open={modal.open}
+        onClose={() => setModal(emptyModal)}
+        title={isAdd ? 'Add operator' : `Edit ${modal.operator?.name || 'operator'}`}
+        description={isAdd ? 'They receive an email with their sign-in details.' : undefined}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setModal(emptyModal)}>
+              Cancel
+            </Button>
+            <Button type="submit" form="operator-form" loading={saving}>
+              {isAdd ? 'Add operator' : 'Save changes'}
+            </Button>
+          </>
+        }
+      >
+        <form id="operator-form" onSubmit={handleSubmit} className="space-y-4">
+          <Field label="Full name" required>
+            <Input value={modal.name} onChange={(e) => setModal({ ...modal, name: e.target.value })} autoComplete="off" data-autofocus />
+          </Field>
+          <Field label="Email" required={isAdd} hint={isAdd ? undefined : 'Email cannot be changed.'}>
+            <Input type="email" value={modal.email} disabled={!isAdd} onChange={(e) => setModal({ ...modal, email: e.target.value })} autoComplete="off" />
+          </Field>
+          <Field
+            label={isAdd ? 'Temporary password' : 'New password'}
+            required={isAdd}
+            optional={!isAdd}
+            hint={isAdd ? 'At least 6 characters. Ask them to change it after signing in.' : 'Leave blank to keep the current password.'}
+          >
+            <Input type="password" value={modal.password} onChange={(e) => setModal({ ...modal, password: e.target.value })} autoComplete="new-password" minLength={6} />
+          </Field>
+          {modalError && <Notice tone="critical">{modalError}</Notice>}
+        </form>
+      </Dialog>
+
+      <Dialog
+        open={assignModal.open}
+        onClose={() => setAssignModal({ open: false, operator: null, selectedCameraIds: [] })}
+        title="Camera access"
+        description={assignModal.operator ? `Choose the cameras ${assignModal.operator.name} can see and respond to.` : undefined}
+        footer={
+          cameras.length > 0 && (
+            <>
+              <Button variant="secondary" onClick={() => setAssignModal({ open: false, operator: null, selectedCameraIds: [] })}>
+                Cancel
+              </Button>
+              <Button onClick={handleAssignCameras} loading={saving}>
+                Save access
+              </Button>
+            </>
+          )
+        }
+      >
+        {cameras.length === 0 ? (
+          <EmptyState
+            icon={Video}
+            title="No cameras yet"
+            description="Add cameras first, then give operators access."
+            action={
+              <Button as={Link} to="/orgadmin/cameras" variant="secondary">
+                Go to cameras
+              </Button>
+            }
+            compact
+          />
+        ) : (
+          <fieldset>
+            <legend className="mb-2 flex w-full items-center justify-between text-sm text-fg-muted">
+              <span>
+                {assignModal.selectedCameraIds.length} of {cameras.length} selected
+              </span>
+              <button
+                type="button"
+                className="link text-sm"
+                onClick={() =>
+                  setAssignModal((m) => ({ ...m, selectedCameraIds: m.selectedCameraIds.length === cameras.length ? [] : cameras.map((c) => c._id) }))
+                }
+              >
+                {assignModal.selectedCameraIds.length === cameras.length ? 'Clear all' : 'Select all'}
+              </button>
+            </legend>
+            <ul className="max-h-80 divide-y divide-line overflow-y-auto rounded-md border border-line scrollbar-thin">
+              {cameras.map((cam) => {
+                const checked = assignModal.selectedCameraIds.includes(cam._id);
+                return (
+                  <li key={cam._id}>
+                    <label className={cn('flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors hover:bg-surface-2', checked && 'bg-info-soft/60')}>
+                      <input type="checkbox" checked={checked} onChange={() => toggleCamera(cam._id)} className="h-4 w-4 rounded accent-brand-600" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-fg">{cameraTitle(cam)}</span>
+                        <span className="block truncate text-xs text-fg-muted">{cam.location}</span>
+                      </span>
+                      {cam.displayNumber && <span className="font-mono text-2xs text-fg-subtle">{cam.displayNumber}</span>}
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+          </fieldset>
+        )}
+      </Dialog>
     </div>
   );
 };

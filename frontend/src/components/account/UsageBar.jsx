@@ -1,23 +1,31 @@
-const UsageBar = ({ label, used, limit, icon: Icon }) => {
+import { cn } from '../../utils/cn';
+
+/** Quota meter: neutral below 80%, warning from 80%, critical only when the limit is reached. */
+const UsageBar = ({ label, used = 0, limit, icon: Icon, className }) => {
   const safeLimit = limit > 0 ? limit : 1;
   const pct = Math.min(100, Math.round((used / safeLimit) * 100));
+  const tone = used >= safeLimit && limit > 0 ? 'bg-critical' : pct >= 80 ? 'bg-warning' : 'bg-brand-600';
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-          {Icon && <Icon size={16} />}
-          <span>{label}</span>
-        </div>
-        <span className="text-sm text-gray-600 dark:text-gray-400">
-          {used} / {limit ?? '—'}
+    <div className={className}>
+      <div className="mb-2 flex items-center justify-between gap-3 text-sm">
+        <span className="flex items-center gap-2 font-medium text-fg">
+          {Icon && <Icon size={16} className="text-fg-subtle" aria-hidden="true" />}
+          {label}
+        </span>
+        <span className="tabular text-fg-muted">
+          <span className="font-medium text-fg">{used}</span> of {limit ?? '—'}
         </span>
       </div>
-      <div className="h-2 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
-        <div
-          className={`h-full rounded-full ${pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-yellow-500' : 'bg-primary-600'}`}
-          style={{ width: `${pct}%` }}
-        />
+      <div
+        role="meter"
+        aria-label={label}
+        aria-valuemin={0}
+        aria-valuemax={limit || 0}
+        aria-valuenow={used}
+        className="h-1.5 overflow-hidden rounded-full bg-surface-3"
+      >
+        <div className={cn('h-full rounded-full transition-[width] duration-500', tone)} style={{ width: `${pct}%` }} />
       </div>
     </div>
   );

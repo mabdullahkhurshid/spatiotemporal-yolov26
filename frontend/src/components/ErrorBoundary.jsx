@@ -1,4 +1,5 @@
 import { Component } from 'react';
+import { LogoMark } from './ui/Logo';
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -11,34 +12,31 @@ class ErrorBoundary extends Component {
   }
 
   componentDidCatch(error, info) {
-    // eslint-disable-next-line no-console
     console.error('React error boundary caught an error:', error, info);
   }
 
   render() {
-    if (this.state.hasError) {
-      return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4">
-          <div className="max-w-md w-full text-center">
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Something went wrong</h1>
-            <p className="text-gray-600 dark:text-gray-400 mb-4">
-              An unexpected error occurred. Please refresh the page or try again later.
-            </p>
-            <button
-              type="button"
-              onClick={() => window.location.reload()}
-              className="px-4 py-2 rounded-lg bg-primary-600 text-white hover:bg-primary-700"
-            >
-              Reload
+    if (!this.state.hasError) return this.props.children;
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-canvas px-4">
+        <div className="w-full max-w-md rounded-xl border border-line bg-surface p-8 text-center">
+          <LogoMark size={36} className="mx-auto" />
+          <h1 className="mt-5 text-lg font-semibold text-fg">Something went wrong</h1>
+          <p className="mt-2 text-sm text-fg-muted">
+            This page hit an unexpected error. Monitoring keeps running on the server — reload to continue.
+          </p>
+          <div className="mt-6 flex justify-center gap-2">
+            <button type="button" onClick={() => window.location.reload()} className="btn-primary">
+              Reload page
             </button>
+            <a href="/" className="btn-secondary">
+              Go to home
+            </a>
           </div>
         </div>
-      );
-    }
-
-    return this.props.children;
+      </main>
+    );
   }
 }
 
 export default ErrorBoundary;
-

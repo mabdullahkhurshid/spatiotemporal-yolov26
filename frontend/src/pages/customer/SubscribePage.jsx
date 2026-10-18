@@ -2,20 +2,21 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import toast from "react-hot-toast";
-import {
-  Building2,
-  CreditCard,
-  MapPin,
-  User,
-  Mail,
-  Phone,
-} from "lucide-react";
+import { ArrowLeft, Building2, CreditCard, Lock, MapPin, Package, User } from 'lucide-react';
+import PageHeader from '../../components/ui/PageHeader';
+import Button from '../../components/ui/Button';
+import Badge from '../../components/ui/Badge';
+import Card, { CardBody, CardHeader } from '../../components/ui/Card';
+import { EmptyState, Notice, Skeleton } from '../../components/ui/Feedback';
+import { Field, Input } from '../../components/ui/Field';
+import { cn } from '../../utils/cn';
 import { getPublicSubscriptionPlans } from "../../services/publicApi";
 import { getAccountSummary } from "../../services/customerApi";
 import { checkoutSubscription } from "../../services/subscriptionApi";
 import { setUser } from "../../store/slices/authSlice";
 import { clearPendingPlanId, getPendingPlanId, isPortalUser } from "../../utils/roleRoutes";
 import { socketService } from "../../services/socketService";
+import { setAccessToken } from "../../services/tokenStore";
 import {
   ACTIVE_SUBSCRIPTION_MESSAGE,
   CHECKOUT_MODE,
@@ -24,7 +25,8 @@ import {
   isSuspendedCheckoutError,
 } from "../../utils/checkoutMode";
 
-import { billingCycleLabel, formatPrice } from "../../utils/planFormatting";
+import { billingCycleLabel } from "../../utils/planFormatting";
+import { formatCurrency } from "../../utils/format";
 
 const formatDuration = (months) => {
   const value = Number(months);
@@ -228,10 +230,10 @@ const SubscribePage = () => {
     try {
       const response = await checkoutSubscription(payload);
 
-      const { accessToken, refreshToken, user: updatedUser } = response.data;
+      const { accessToken, user: updatedUser } = response.data;
 
-      if (accessToken) localStorage.setItem("accessToken", accessToken);
-      if (refreshToken) localStorage.setItem("refreshToken", refreshToken);
+      // The refresh session (httpOnly cookie) is unchanged; only the access token is renewed.
+      if (accessToken) setAccessToken(accessToken);
 
       const normalizedUser = normalizeUser(updatedUser);
       if (normalizedUser) {
@@ -284,371 +286,211 @@ const SubscribePage = () => {
     }
   };
 
-  const submitLabel = isRenewal ? "Renew Subscription" : "Complete Purchase";
+  const submitLabel = isRenewal ? 'Renew subscription' : 'Complete purchase';
   const organization = accountSummary?.organization;
 
   if (pageLoading || isBlocked) {
     return (
-      <div className="max-w-6xl mx-auto">
-        <div className="card animate-pulse h-96" />
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]" aria-hidden="true">
+        <div className="space-y-4">
+          <Skeleton className="h-8 w-56" />
+          <Skeleton className="h-64" />
+          <Skeleton className="h-48" />
+        </div>
+        <Skeleton className="h-96" />
       </div>
     );
   }
 
-  return (
-    <div className="max-w-6xl mx-auto">
-      {planNotAvailable ? (
-        <div className="card max-w-lg mx-auto text-center py-10 space-y-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Plan not available
-          </h2>
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            This plan is inactive or no longer offered. Choose another plan to
-            continue.
-          </p>
-          <Link to="/customer/plans" className="btn-primary inline-flex">
-            Browse Plans
-          </Link>
-        </div>
-      ) : (
-        <div className="grid gap-8 lg:grid-cols-3">
-          <div className="lg:col-span-1 space-y-4">
-            <div className="card">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">
-                Choose Plan
-              </h2>
+  if (planNotAvailable) {
+    return (
+      <Card className="mx-auto max-w-lg">
+        <EmptyState
+          icon={Package}
+          title="This plan is no longer available"
+          description="It may have been retired. Choose another plan to continue."
+          action={
+            <Button as={Link} to="/customer/plans">
+              Browse plans
+            </Button>
+          }
+        />
+      </Card>
+    );
+  }
 
+  return (
+    <div>
+      <PageHeader
+        title={isRenewal ? 'Renew your subscription' : 'Checkout'}
+        description={
+          isRenewal
+            ? `Renewing ${organization?.name || 'your organization'}. Cameras and operators stay in place.`
+            : 'Create your organization and start monitoring. You can add cameras right after purchase.'
+        }
+      />
+
+      <form onSubmit={handleSubmit} className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <div className="space-y-6">
+          {!isRenewal && (
+            <Card>
+              <CardHeader title="Organization" description="The organization you'll manage. You become its administrator." icon={Building2} />
+              <CardBody className="grid gap-4 sm:grid-cols-2">
+                <Field label="Organization name" required className="sm:col-span-2">
+                  <Input value={form.organizationName} onChange={handleChange('organizationName')} placeholder="Northwind Logistics — Karachi DC" autoComplete="organization" />
+                </Field>
+                <Field label="Phone" optional>
+                  <Input type="tel" value={form.phone} onChange={handleChange('phone')} placeholder="+92 300 1234567" autoComplete="tel" />
+                </Field>
+              </CardBody>
+            </Card>
+          )}
+
+          {!isRenewal && (
+            <Card>
+              <CardHeader title="Site address" description="Where your cameras are installed." icon={MapPin} />
+              <CardBody className="grid gap-4 sm:grid-cols-2">
+                <Field label="Street address" optional className="sm:col-span-2">
+                  <Input value={form.street} onChange={handleChange('street')} autoComplete="street-address" />
+                </Field>
+                <Field label="City" optional>
+                  <Input value={form.city} onChange={handleChange('city')} autoComplete="address-level2" />
+                </Field>
+                <Field label="State / province" optional>
+                  <Input value={form.state} onChange={handleChange('state')} autoComplete="address-level1" />
+                </Field>
+                <Field label="Postal code" optional>
+                  <Input value={form.zipCode} onChange={handleChange('zipCode')} autoComplete="postal-code" />
+                </Field>
+                <Field label="Country" optional>
+                  <Input value={form.country} onChange={handleChange('country')} autoComplete="country-name" />
+                </Field>
+              </CardBody>
+            </Card>
+          )}
+
+          <Card>
+            <CardHeader title="Billing contact" icon={User} />
+            <CardBody className="grid gap-4 sm:grid-cols-2">
+              <Field label="Full name">
+                <Input value={form.billingName} onChange={handleChange('billingName')} autoComplete="name" />
+              </Field>
+              <Field label="Email" hint="Receipts are sent to your account email.">
+                <Input type="email" value={form.billingEmail} readOnly className="bg-surface-2 text-fg-muted" />
+              </Field>
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader title="Payment" icon={CreditCard} actions={<Badge tone="info">Demo mode</Badge>} />
+            <CardBody className="space-y-4">
+              <Notice tone="info" icon={Lock}>
+                Payments are simulated in this deployment — no card is charged. The fields are pre-filled with a test card.
+              </Notice>
+              <Field label="Card number">
+                <Input value={form.cardNumber} onChange={handleChange('cardNumber')} inputMode="numeric" autoComplete="cc-number" />
+              </Field>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <Field label="Expiry">
+                  <Input value={form.cardExpiry} onChange={handleChange('cardExpiry')} placeholder="MM/YY" autoComplete="cc-exp" />
+                </Field>
+                <Field label="CVC">
+                  <Input value={form.cardCvc} onChange={handleChange('cardCvc')} inputMode="numeric" autoComplete="cc-csc" />
+                </Field>
+                <Field label="Name on card">
+                  <Input value={form.cardName} onChange={handleChange('cardName')} autoComplete="cc-name" />
+                </Field>
+              </div>
+            </CardBody>
+          </Card>
+        </div>
+
+        <aside className="space-y-4 lg:sticky lg:top-24">
+          <Card>
+            <CardHeader title="Order summary" />
+            <CardBody className="space-y-5">
               {plans.length === 0 ? (
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  No plans available.{" "}
-                  <Link to="/customer/plans" className="text-primary-600 hover:underline">
+                <p className="text-sm text-fg-muted">
+                  No plans are available.{' '}
+                  <Link to="/customer/plans" className="link">
                     Browse plans
                   </Link>
                 </p>
               ) : (
-                <div className="space-y-2">
-                  {plans.map((plan) => {
-                    const isSelected = String(plan._id) === String(selectedPlanId);
-
-                    return (
-                      <button
-                        key={plan._id}
-                        type="button"
-                        onClick={() => handlePlanSelect(plan._id)}
-                        className={`w-full text-left p-4 rounded-xl border transition-colors ${
-                          isSelected
-                            ? "border-primary-600 bg-primary-50 dark:bg-primary-900/20 ring-2 ring-primary-500/30"
-                            : "border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-700"
-                        }`}
-                      >
-                        <p className="font-semibold text-gray-900 dark:text-white">
-                          {plan.name}
-                        </p>
-                        <p className="text-lg font-bold text-primary-600 dark:text-amber-400 mt-1">
-                          {formatPrice(plan.price, plan.currency)}
-                          <span className="text-xs font-normal text-gray-500 ml-1">
-                            / {billingCycleLabel(plan.billingCycle)}
+                <fieldset>
+                  <legend className="label">Plan</legend>
+                  <div className="space-y-2">
+                    {plans.map((plan) => {
+                      const selected = String(plan._id) === String(selectedPlanId);
+                      return (
+                        <label
+                          key={plan._id}
+                          className={cn(
+                            'flex cursor-pointer items-center gap-3 rounded-md border p-3 transition-colors',
+                            selected ? 'border-brand-500 bg-info-soft' : 'border-line-strong hover:bg-surface-2'
+                          )}
+                        >
+                          <input type="radio" name="plan" checked={selected} onChange={() => handlePlanSelect(plan._id)} className="h-4 w-4 accent-brand-600" />
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-medium text-fg">{plan.name}</span>
+                            <span className="block text-xs text-fg-muted">
+                              {plan.maxCameras} cameras · {formatDuration(plan.durationMonths)}
+                            </span>
                           </span>
-                        </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          {formatDuration(plan.durationMonths)}
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
+                          <span className="tabular text-sm font-semibold text-fg">{formatCurrency(plan.price, plan.currency)}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
               )}
-            </div>
 
-            {isRenewal && organization && (
-              <div className="card space-y-2">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                  Organization
-                </h2>
-                <p className="font-semibold text-gray-900 dark:text-white">{organization.name}</p>
-                <p className="text-sm text-gray-600 dark:text-gray-400 flex items-center gap-2">
-                  <Mail size={16} className="shrink-0" />
-                  {organization.email}
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Your existing organization will be renewed on this plan.
-                </p>
-              </div>
-            )}
-
-            {selectedPlan && (
-              <div className="card bg-gradient-to-br from-primary-600 to-primary-700 text-white border-0">
-                <p className="text-xs uppercase tracking-wide opacity-80 mb-1">
-                  Order Summary
-                </p>
-                <p className="text-xl font-bold">{selectedPlan.name}</p>
-                <p className="text-3xl font-bold mt-2">
-                  {formatPrice(selectedPlan.price, selectedPlan.currency)}
-                </p>
-                <p className="text-sm opacity-90 mt-2">
-                  Billed {billingCycleLabel(selectedPlan.billingCycle)} ·{" "}
-                  {formatDuration(selectedPlan.durationMonths)}
-                </p>
-              </div>
-            )}
-          </div>
-
-          <form onSubmit={handleSubmit} className="lg:col-span-2 space-y-6">
-            {!isRenewal && (
-              <>
-                <section className="card space-y-4">
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                    <Building2 size={20} className="text-primary-600" />
-                    Organization Details
-                  </h2>
-
-                  <div>
-                    <label htmlFor="org-name" className="block text-sm font-medium mb-2">
-                      Organization Name
-                    </label>
-                    <input
-                      id="org-name"
-                      type="text"
-                      value={form.organizationName}
-                      onChange={handleChange("organizationName")}
-                      className="input-field"
-                      placeholder="Company or team name"
-                    />
+              {selectedPlan && (
+                <dl className="space-y-2 border-t border-line pt-4 text-sm">
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-fg-muted">{selectedPlan.name} plan</dt>
+                    <dd className="tabular text-fg">{formatCurrency(selectedPlan.price, selectedPlan.currency)}</dd>
                   </div>
-
-                  <div>
-                    <label htmlFor="org-phone" className="block text-sm font-medium mb-2">
-                      Organization Phone
-                    </label>
-                    <div className="relative">
-                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                      <input
-                        id="org-phone"
-                        type="tel"
-                        value={form.phone}
-                        onChange={handleChange("phone")}
-                        className="input-field pl-10"
-                        placeholder="+1 (555) 000-0000"
-                      />
-                    </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-fg-muted">Term</dt>
+                    <dd className="text-fg">
+                      {formatDuration(selectedPlan.durationMonths)}, billed {billingCycleLabel(selectedPlan.billingCycle)}
+                    </dd>
                   </div>
-                </section>
-
-                <section className="card space-y-4">
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                    <MapPin size={20} className="text-primary-600" />
-                    Organization Address
-                  </h2>
-
-                  <div>
-                    <label htmlFor="street" className="block text-sm font-medium mb-2">
-                      Street Address
-                    </label>
-                    <input
-                      id="street"
-                      type="text"
-                      value={form.street}
-                      onChange={handleChange("street")}
-                      className="input-field"
-                      placeholder="123 Main Street"
-                    />
+                  <div className="flex justify-between gap-3 border-t border-line pt-3 text-base">
+                    <dt className="font-semibold text-fg">Due today</dt>
+                    <dd className="tabular font-semibold text-fg">{formatCurrency(selectedPlan.price, selectedPlan.currency)}</dd>
                   </div>
+                </dl>
+              )}
 
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <label htmlFor="city" className="block text-sm font-medium mb-2">
-                        City
-                      </label>
-                      <input
-                        id="city"
-                        type="text"
-                        value={form.city}
-                        onChange={handleChange("city")}
-                        className="input-field"
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="state" className="block text-sm font-medium mb-2">
-                        State / Province
-                      </label>
-                      <input
-                        id="state"
-                        type="text"
-                        value={form.state}
-                        onChange={handleChange("state")}
-                        className="input-field"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <label htmlFor="zip" className="block text-sm font-medium mb-2">
-                        ZIP / Postal Code
-                      </label>
-                      <input
-                        id="zip"
-                        type="text"
-                        value={form.zipCode}
-                        onChange={handleChange("zipCode")}
-                        className="input-field"
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="country" className="block text-sm font-medium mb-2">
-                        Country
-                      </label>
-                      <input
-                        id="country"
-                        type="text"
-                        value={form.country}
-                        onChange={handleChange("country")}
-                        className="input-field"
-                      />
-                    </div>
-                  </div>
-                </section>
-              </>
-            )}
-
-            <section className="card space-y-4">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                <User size={20} className="text-primary-600" />
-                Billing Contact
-              </h2>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label htmlFor="billing-name" className="block text-sm font-medium mb-2">
-                    Full Name
-                  </label>
-                  <input
-                    id="billing-name"
-                    type="text"
-                    value={form.billingName}
-                    onChange={handleChange("billingName")}
-                    className="input-field"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="billing-email" className="block text-sm font-medium mb-2">
-                    Email
-                  </label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                    <input
-                      id="billing-email"
-                      type="email"
-                      value={form.billingEmail}
-                      readOnly
-                      className="input-field pl-10 bg-gray-100 dark:bg-gray-800"
-                    />
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section className="card space-y-4">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                <CreditCard size={20} className="text-primary-600" />
-                Payment Details
-                <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
-                  (simulated — not charged)
-                </span>
-              </h2>
-
-              <div>
-                <label htmlFor="card-number" className="block text-sm font-medium mb-2">
-                  Card Number
-                </label>
-                <input
-                  id="card-number"
-                  type="text"
-                  value={form.cardNumber}
-                  onChange={handleChange("cardNumber")}
-                  className="input-field"
-                />
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div>
-                  <label htmlFor="card-expiry" className="block text-sm font-medium mb-2">
-                    Expiry
-                  </label>
-                  <input
-                    id="card-expiry"
-                    type="text"
-                    value={form.cardExpiry}
-                    onChange={handleChange("cardExpiry")}
-                    className="input-field"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="card-cvc" className="block text-sm font-medium mb-2">
-                    CVC
-                  </label>
-                  <input
-                    id="card-cvc"
-                    type="text"
-                    value={form.cardCvc}
-                    onChange={handleChange("cardCvc")}
-                    className="input-field"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="card-name" className="block text-sm font-medium mb-2">
-                    Name on Card
-                  </label>
-                  <input
-                    id="card-name"
-                    type="text"
-                    value={form.cardName}
-                    onChange={handleChange("cardName")}
-                    className="input-field"
-                  />
-                </div>
-              </div>
-            </section>
-
-            {capacityPlanId && (
-              <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4 text-sm">
-                <p className="text-amber-900 dark:text-amber-100">
-                  This plan does not fit your current camera or operator usage.
-                  Remove resources or pick a larger plan before checkout.
-                </p>
-                <Link
-                  to={`/customer/downgrade-prep?planId=${encodeURIComponent(capacityPlanId)}`}
-                  className="inline-flex mt-3 text-primary-600 dark:text-primary-400 font-medium hover:underline"
+              {capacityPlanId && (
+                <Notice
+                  tone="warning"
+                  title="This plan can't hold your current setup"
+                  action={
+                    <Button as={Link} to={`/customer/downgrade-prep?planId=${encodeURIComponent(capacityPlanId)}`} size="sm" variant="secondary">
+                      Reduce usage
+                    </Button>
+                  }
                 >
-                  Manage cameras & usage
-                </Link>
-              </div>
-            )}
+                  Remove cameras or operators, or pick a larger plan.
+                </Notice>
+              )}
 
-            <div className="flex flex-wrap justify-end gap-3">
-              <Link
-                to="/customer/plans"
-                className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800"
-              >
-                Back to Plans
-              </Link>
-              <Link
-                to="/customer/dashboard"
-                className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800"
-              >
-                Cancel
-              </Link>
-              <button
-                type="submit"
-                disabled={submitting || !selectedPlanId || !selectedPlan}
-                className="btn-primary disabled:opacity-50 min-w-[140px]"
-              >
-                {submitting ? "Processing..." : submitLabel}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+              <Button type="submit" size="lg" className="w-full" loading={submitting} disabled={!selectedPlanId || !selectedPlan}>
+                {submitLabel}
+              </Button>
+              <p className="text-center text-xs text-fg-subtle">
+                {isRenewal ? 'A new term starts today.' : 'Your term starts today. You can renew or change plans when it ends.'}
+              </p>
+            </CardBody>
+          </Card>
+          <Button as={Link} to="/customer/plans" variant="ghost" icon={ArrowLeft} className="w-full">
+            Back to plans
+          </Button>
+        </aside>
+      </form>
     </div>
   );
 };

@@ -1,4 +1,5 @@
 const { body, validationResult } = require("express-validator");
+const { checkStreamSource } = require("../utils/streamSource");
 
 // Validation result handler
 exports.validate = (req, res, next) => {
@@ -106,7 +107,28 @@ exports.validateCamera = [
 
     const cameraType = req.body.cameraType || "ip_rtsp";
 
-    if (cameraType === "ip_rtsp" || cameraType === "onvif") {
+    const fail = (msg, path) =>
+      res.status(400).json({ success: false, message: msg, errors: [{ msg, path }] });
+
+    if (cameraType === "onvif") {
+      const onvif = req.body.onvif;
+      if (onvif !== undefined && (onvif === null || typeof onvif !== "object" || Array.isArray(onvif))) {
+        return fail("Invalid ONVIF connection details", "onvif");
+      }
+      for (const field of ["host", "username", "password", "profileToken"]) {
+        if (onvif?.[field] !== undefined && typeof onvif[field] !== "string") {
+          return fail(`Invalid ONVIF ${field}`, `onvif.${field}`);
+        }
+      }
+      if (onvif?.port !== undefined && onvif.port !== "" && !/^\d{1,5}$/.test(String(onvif.port))) {
+        return fail("ONVIF port must be a number", "onvif.port");
+      }
+      if (req.method === "POST" && !onvif?.host?.trim()) {
+        return fail("Camera IP address or host name is required for ONVIF cameras", "onvif.host");
+      }
+    }
+
+    if (cameraType === "ip_rtsp") {
       const ip = req.body.ipAddress?.trim();
       if (!ip || !IP_ADDRESS_REGEX.test(ip)) {
         return res.status(400).json({
@@ -124,6 +146,17 @@ exports.validateCamera = [
           success: false,
           message: "Validation error",
           errors: [{ msg: "Stream URL is required for HTTP MJPEG cameras", path: "streamUrl" }],
+        });
+      }
+    }
+
+    if (req.body.streamUrl !== undefined) {
+      const source = checkStreamSource(req.body.streamUrl);
+      if (!source.ok) {
+        return res.status(400).json({
+          success: false,
+          message: source.message,
+          errors: [{ msg: source.message, path: "streamUrl" }],
         });
       }
     }

@@ -3,6 +3,7 @@ const { body } = require('express-validator');
 const SubscriptionPlan = require('../models/SubscriptionPlan');
 const { submitContact } = require('../controllers/contactController');
 const { validate } = require('../middleware/validation');
+const { contactLimiter } = require('../middleware/rateLimits');
 
 const router = express.Router();
 
@@ -25,6 +26,7 @@ router.get('/subscription-plans', async (req, res, next) => {
 
 router.post(
   '/contact',
+  contactLimiter,
   [
     body('name').trim().notEmpty().withMessage('Name is required').isLength({ max: 120 }),
     body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),

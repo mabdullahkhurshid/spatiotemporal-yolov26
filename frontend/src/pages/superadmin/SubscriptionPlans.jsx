@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { Layers, Link2, MoreHorizontal, Pause, Pencil, Play, Plus, Trash2 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import {
   getSubscriptionPlans,
   createSubscriptionPlan,
@@ -7,30 +9,22 @@ import {
   reactivateSubscriptionPlan,
   deleteSubscriptionPlan,
   assignPlanToOrganization,
+  getOrganizations,
 } from '../../services/apiEndpoints';
-import { getOrganizations } from '../../services/apiEndpoints';
-import { Plus, Edit2, Pause, Play, Trash2, Link2 } from 'lucide-react';
-import toast from 'react-hot-toast';
+import PageHeader from '../../components/ui/PageHeader';
+import Button from '../../components/ui/Button';
+import IconButton from '../../components/ui/IconButton';
+import Card from '../../components/ui/Card';
+import Menu from '../../components/ui/Menu';
+import Badge, { StatusBadge } from '../../components/ui/Badge';
+import Dialog from '../../components/ui/Dialog';
+import DataTable from '../../components/ui/DataTable';
+import { EmptyState } from '../../components/ui/Feedback';
+import { Field, Input, Select, Switch, Textarea } from '../../components/ui/Field';
+import { useConfirm } from '../../components/ui/confirmContext';
+import { formatCurrency } from '../../utils/format';
 
-const formatPrice = (price, currency = 'USD') => {
-  const n = Number(price);
-  if (!Number.isFinite(n)) return '—';
-  try {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(n);
-  } catch {
-    return `${n.toFixed(2)} ${currency}`;
-  }
-};
-
-const formatDate = (date) => {
-  if (!date) return '—';
-  return new Date(date).toLocaleDateString();
-};
-
-const billingLabel = (cycle) => {
-  const labels = { monthly: 'Monthly', quarterly: 'Quarterly', yearly: 'Yearly', custom: 'Custom' };
-  return labels[cycle] || cycle;
-};
+const CYCLE_LABEL = { monthly: 'month', quarterly: 'quarter', yearly: 'year', custom: 'term' };
 
 const emptyForm = {
   name: '',
@@ -86,133 +80,94 @@ const parsePlanPayload = (form) => ({
   isRecommended: form.isRecommended,
 });
 
-const PlanFormFields = ({ form, setForm }) => (
-  <div className="space-y-3">
-    <div className="grid grid-cols-2 gap-2">
-      <div className="col-span-2">
-        <label className="block text-sm font-medium mb-1">Plan name</label>
-        <input
-          value={form.name}
-          onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-          required
-          className="w-full rounded-lg border dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2"
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium mb-1">Slug</label>
-        <input
-          value={form.slug}
-          onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))}
-          placeholder="auto-generated"
-          className="w-full rounded-lg border dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2"
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium mb-1">Display order</label>
-        <input
-          type="number"
-          min={0}
-          value={form.displayOrder}
-          onChange={(e) => setForm((f) => ({ ...f, displayOrder: e.target.value }))}
-          className="w-full rounded-lg border dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2"
-        />
-      </div>
-    </div>
-    <div>
-      <label className="block text-sm font-medium mb-1">Description</label>
-      <textarea
-        rows={2}
-        value={form.description}
-        onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-        className="w-full rounded-lg border dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2"
-      />
-    </div>
-    <div className="grid grid-cols-2 gap-2">
-      <div>
-        <label className="block text-sm font-medium mb-1">Price</label>
-        <input
-          type="number"
-          min={0}
-          step="0.01"
-          value={form.price}
-          onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))}
-          required
-          className="w-full rounded-lg border dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2"
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium mb-1">Currency</label>
-        <input
-          value={form.currency}
-          onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value.toUpperCase() }))}
-          maxLength={3}
-          className="w-full rounded-lg border dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2"
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium mb-1">Duration (months)</label>
-        <input
-          type="number"
-          min={1}
-          value={form.durationMonths}
-          onChange={(e) => setForm((f) => ({ ...f, durationMonths: e.target.value }))}
-          className="w-full rounded-lg border dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2"
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium mb-1">Billing type</label>
-        <select
-          value={form.billingCycle}
-          onChange={(e) => setForm((f) => ({ ...f, billingCycle: e.target.value }))}
-          className="w-full rounded-lg border dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2"
-        >
-          <option value="monthly">Monthly</option>
-          <option value="quarterly">Quarterly</option>
-          <option value="yearly">Yearly</option>
-          <option value="custom">Custom</option>
-        </select>
-      </div>
-    </div>
-    <div className="grid grid-cols-2 gap-2">
-      <div>
-        <label className="block text-sm font-medium mb-1">Max cameras</label>
-        <input type="number" min={1} value={form.maxCameras} onChange={(e) => setForm((f) => ({ ...f, maxCameras: e.target.value }))} className="w-full rounded-lg border dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2" />
-      </div>
-      <div>
-        <label className="block text-sm font-medium mb-1">Max operators</label>
-        <input type="number" min={0} value={form.maxOperators} onChange={(e) => setForm((f) => ({ ...f, maxOperators: e.target.value }))} className="w-full rounded-lg border dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2" />
-      </div>
-      <div>
-        <label className="block text-sm font-medium mb-1">Alert retention (days)</label>
-        <input type="number" min={1} value={form.alertRetentionDays} onChange={(e) => setForm((f) => ({ ...f, alertRetentionDays: e.target.value }))} className="w-full rounded-lg border dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2" />
-      </div>
-      <div>
-        <label className="block text-sm font-medium mb-1">Storage (GB)</label>
-        <input type="number" min={0} value={form.storageLimit} onChange={(e) => setForm((f) => ({ ...f, storageLimit: e.target.value }))} className="w-full rounded-lg border dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2" />
-      </div>
-    </div>
-    <div>
-      <label className="block text-sm font-medium mb-1">Support priority</label>
-      <select value={form.supportPriority} onChange={(e) => setForm((f) => ({ ...f, supportPriority: e.target.value }))} className="w-full rounded-lg border dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2">
-        <option value="standard">Standard</option>
-        <option value="priority">Priority</option>
-        <option value="premium">Premium</option>
-      </select>
-    </div>
-    <div className="flex gap-4 text-sm">
-      <label className="flex items-center gap-2">
-        <input type="checkbox" checked={form.isPopular} onChange={(e) => setForm((f) => ({ ...f, isPopular: e.target.checked }))} className="rounded" />
-        Popular badge
-      </label>
-      <label className="flex items-center gap-2">
-        <input type="checkbox" checked={form.isRecommended} onChange={(e) => setForm((f) => ({ ...f, isRecommended: e.target.checked }))} className="rounded" />
-        Recommended badge
-      </label>
-    </div>
-  </div>
+const FormSection = ({ title, children }) => (
+  <fieldset className="space-y-4">
+    <legend className="eyebrow mb-3">{title}</legend>
+    {children}
+  </fieldset>
 );
 
+const PlanForm = ({ form, setForm, onSubmit }) => {
+  const set = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
+  return (
+    <form id="plan-form" onSubmit={onSubmit} className="space-y-7">
+      <FormSection title="Basics">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Plan name" required>
+            <Input value={form.name} onChange={set('name')} placeholder="Professional" data-autofocus />
+          </Field>
+          <Field label="Slug" optional hint="Generated from the name if empty.">
+            <Input value={form.slug} onChange={set('slug')} placeholder="professional" />
+          </Field>
+        </div>
+        <Field label="Description" optional hint="Shown on pricing cards.">
+          <Textarea rows={2} value={form.description} onChange={set('description')} placeholder="Warehouses, campuses and multi-floor facilities" />
+        </Field>
+      </FormSection>
+
+      <FormSection title="Pricing">
+        <div className="grid gap-4 sm:grid-cols-4">
+          <Field label="Price" required className="sm:col-span-2">
+            <Input type="number" min={0} step="0.01" value={form.price} onChange={set('price')} />
+          </Field>
+          <Field label="Currency">
+            <Input value={form.currency} onChange={set('currency')} maxLength={3} className="uppercase" />
+          </Field>
+          <Field label="Months">
+            <Input type="number" min={1} value={form.durationMonths} onChange={set('durationMonths')} />
+          </Field>
+        </div>
+        <Field label="Billing cycle">
+          <Select value={form.billingCycle} onChange={set('billingCycle')}>
+            <option value="monthly">Monthly</option>
+            <option value="quarterly">Quarterly</option>
+            <option value="yearly">Yearly</option>
+            <option value="custom">Custom</option>
+          </Select>
+        </Field>
+      </FormSection>
+
+      <FormSection title="Limits">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <Field label="Cameras">
+            <Input type="number" min={1} value={form.maxCameras} onChange={set('maxCameras')} />
+          </Field>
+          <Field label="Operators">
+            <Input type="number" min={0} value={form.maxOperators} onChange={set('maxOperators')} />
+          </Field>
+          <Field label="Alert history (days)">
+            <Input type="number" min={1} value={form.alertRetentionDays} onChange={set('alertRetentionDays')} />
+          </Field>
+          <Field label="Storage (GB)">
+            <Input type="number" min={0} value={form.storageLimit} onChange={set('storageLimit')} />
+          </Field>
+        </div>
+      </FormSection>
+
+      <FormSection title="Presentation">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Support level">
+            <Select value={form.supportPriority} onChange={set('supportPriority')}>
+              <option value="standard">Standard</option>
+              <option value="priority">Priority</option>
+              <option value="premium">Premium</option>
+            </Select>
+          </Field>
+          <Field label="Display order" hint="Lower numbers appear first.">
+            <Input type="number" min={0} value={form.displayOrder} onChange={set('displayOrder')} />
+          </Field>
+        </div>
+        <div className="space-y-4 rounded-md border border-line p-4">
+          <Switch label="Most popular" description="Adds a “Most popular” label on pricing pages." checked={form.isPopular} onChange={(v) => setForm((f) => ({ ...f, isPopular: v }))} />
+          <Switch label="Recommended" description="Highlights this plan on pricing pages." checked={form.isRecommended} onChange={(v) => setForm((f) => ({ ...f, isRecommended: v }))} />
+        </div>
+      </FormSection>
+    </form>
+  );
+};
+
 const SuperAdminSubscriptionPlans = () => {
+  const confirm = useConfirm();
   const [plans, setPlans] = useState([]);
   const [organizations, setOrganizations] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -233,12 +188,6 @@ const SuperAdminSubscriptionPlans = () => {
     }
   };
 
-  const loadOrganizations = () => {
-    getOrganizations()
-      .then((res) => setOrganizations(res.data.data.filter((o) => o.status === 'ACTIVE')))
-      .catch(() => {});
-  };
-
   useEffect(() => {
     loadPlans();
   }, []);
@@ -254,7 +203,9 @@ const SuperAdminSubscriptionPlans = () => {
   };
 
   const openAssign = (plan) => {
-    loadOrganizations();
+    getOrganizations()
+      .then((res) => setOrganizations(res.data.data.filter((o) => o.status === 'ACTIVE')))
+      .catch(() => toast.error('Failed to load organizations'));
     setAssignOrgId('');
     setModal({ type: 'assign', plan });
   };
@@ -268,14 +219,13 @@ const SuperAdminSubscriptionPlans = () => {
   const handleSave = async (e) => {
     e.preventDefault();
     setSaving(true);
-    const payload = parsePlanPayload(form);
     try {
       if (modal === 'create') {
-        await createSubscriptionPlan(payload);
-        toast.success('Subscription plan created');
+        await createSubscriptionPlan(parsePlanPayload(form));
+        toast.success('Plan created');
       } else if (modal?.type === 'edit') {
-        await updateSubscriptionPlan(modal.plan._id, payload);
-        toast.success('Subscription plan updated');
+        await updateSubscriptionPlan(modal.plan._id, parsePlanPayload(form));
+        toast.success('Plan updated');
       }
       closeModal();
       loadPlans();
@@ -287,7 +237,13 @@ const SuperAdminSubscriptionPlans = () => {
   };
 
   const handleDeactivate = async (plan) => {
-    if (!window.confirm(`Deactivate "${plan.name}"? Existing subscribers keep access until expiry.`)) return;
+    const ok = await confirm({
+      title: `Deactivate ${plan.name}?`,
+      description: 'It disappears from pricing pages. Organizations already on this plan keep access until their term ends.',
+      confirmLabel: 'Deactivate plan',
+      tone: 'danger',
+    });
+    if (!ok) return;
     try {
       await deactivateSubscriptionPlan(plan._id);
       toast.success('Plan deactivated');
@@ -308,149 +264,183 @@ const SuperAdminSubscriptionPlans = () => {
   };
 
   const handleDelete = async (plan) => {
-    if (!window.confirm(`Permanently delete "${plan.name}"? This cannot be undone.`)) return;
+    const ok = await confirm({
+      title: `Delete ${plan.name} permanently?`,
+      description: 'Plans that any organization, subscription or order still references cannot be deleted. Deactivate them instead.',
+      confirmLabel: 'Delete plan',
+      tone: 'danger',
+    });
+    if (!ok) return;
     try {
       await deleteSubscriptionPlan(plan._id);
-      toast.success('Plan permanently deleted');
+      toast.success('Plan deleted');
       loadPlans();
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Cannot delete this plan');
+      toast.error(error.response?.data?.message || 'This plan cannot be deleted');
     }
   };
 
   const handleAssign = async () => {
     if (!modal?.plan || !assignOrgId) return;
+    setSaving(true);
     try {
       await assignPlanToOrganization(modal.plan._id, assignOrgId);
-      toast.success('Plan assigned to organization');
+      toast.success('Plan assigned');
       closeModal();
       loadPlans();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to assign');
+    } finally {
+      setSaving(false);
     }
   };
 
+  const columns = [
+    {
+      key: 'name',
+      header: 'Plan',
+      primary: true,
+      cell: (p) => (
+        <div className="min-w-0">
+          <p className="flex flex-wrap items-center gap-1.5 font-medium text-fg">
+            {p.name}
+            {p.isPopular && <Badge tone="warning" size="xs">Most popular</Badge>}
+            {p.isRecommended && <Badge tone="brand" size="xs">Recommended</Badge>}
+          </p>
+          {p.description && <p className="mt-0.5 line-clamp-1 max-w-sm text-xs text-fg-muted">{p.description}</p>}
+        </div>
+      ),
+    },
+    {
+      key: 'price',
+      header: 'Price',
+      cell: (p) => (
+        <span className="tabular whitespace-nowrap text-sm">
+          <span className="font-medium text-fg">{formatCurrency(p.price, p.currency)}</span>
+          <span className="text-fg-muted"> / {CYCLE_LABEL[p.billingCycle] || 'term'}</span>
+        </span>
+      ),
+    },
+    {
+      key: 'limits',
+      header: 'Limits',
+      hideBelow: 'lg',
+      cell: (p) => (
+        <span className="tabular text-sm text-fg-muted">
+          {p.maxCameras} cameras · {p.maxOperators} operators
+        </span>
+      ),
+    },
+    { key: 'orgs', header: 'Organizations', align: 'right', hideBelow: 'lg', cell: (p) => <span className="tabular text-sm">{p.organizationsUsing ?? 0}</span> },
+    { key: 'status', header: 'Status', cell: (p) => <StatusBadge kind="plan" value={p.isActive ? 'active' : 'inactive'} /> },
+    {
+      key: 'actions',
+      header: 'Actions',
+      align: 'right',
+      cell: (p) => (
+        <div className="flex justify-end gap-1.5">
+          <Button size="sm" variant="secondary" icon={Pencil} onClick={() => openEdit(p)}>
+            Edit
+          </Button>
+          <Menu
+            width="w-56"
+            items={[
+              p.isActive && { label: 'Assign to organization', icon: Link2, onClick: () => openAssign(p) },
+              p.isActive ? { label: 'Deactivate', icon: Pause, onClick: () => handleDeactivate(p) } : { label: 'Reactivate', icon: Play, onClick: () => handleReactivate(p) },
+              { divider: true },
+              { label: 'Delete permanently', icon: Trash2, tone: 'danger', onClick: () => handleDelete(p) },
+            ]}
+            trigger={(props) => <IconButton {...props} icon={MoreHorizontal} label={`More actions for ${p.name}`} size="sm" />}
+          />
+        </div>
+      ),
+    },
+  ];
+
+  const editing = modal === 'create' || modal?.type === 'edit';
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap justify-between items-center gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Subscription Plans</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">Manage pricing, limits, and plan lifecycle</p>
-        </div>
-        <button type="button" onClick={openCreate} className="btn-primary flex items-center gap-2">
-          <Plus size={20} />
-          Create Plan
-        </button>
-      </div>
+    <div>
+      <PageHeader
+        title="Plans"
+        description="Plans shown on the pricing page and available at checkout."
+        actions={
+          <Button icon={Plus} onClick={openCreate}>
+            New plan
+          </Button>
+        }
+      />
 
-      {loading ? (
-        <div className="text-center py-12">Loading...</div>
-      ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
-          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 text-sm">
-            <thead className="bg-gray-50 dark:bg-gray-800">
-              <tr>
-                <th className="px-4 py-3 text-left font-semibold">Plan Name</th>
-                <th className="px-4 py-3 text-left font-semibold">Price</th>
-                <th className="px-4 py-3 text-left font-semibold">Duration</th>
-                <th className="px-4 py-3 text-left font-semibold">Cameras</th>
-                <th className="px-4 py-3 text-left font-semibold">Operators</th>
-                <th className="px-4 py-3 text-left font-semibold">Status</th>
-                <th className="px-4 py-3 text-left font-semibold">Orgs Using</th>
-                <th className="px-4 py-3 text-left font-semibold">Created</th>
-                <th className="px-4 py-3 text-left font-semibold">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
-              {plans.map((plan) => (
-                <tr key={plan._id} className={!plan.isActive ? 'bg-gray-50/50 dark:bg-gray-800/30' : ''}>
-                  <td className="px-4 py-3 font-medium">{plan.name}</td>
-                  <td className="px-4 py-3">{formatPrice(plan.price, plan.currency)}</td>
-                  <td className="px-4 py-3">
-                    {plan.durationMonths} mo · {billingLabel(plan.billingCycle)}
-                  </td>
-                  <td className="px-4 py-3">{plan.maxCameras}</td>
-                  <td className="px-4 py-3">{plan.maxOperators}</td>
-                  <td className="px-4 py-3">
-                    {plan.isActive ? (
-                      <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">Active</span>
-                    ) : (
-                      <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300">Deactivated</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">{plan.organizationsUsing ?? 0}</td>
-                  <td className="px-4 py-3">{formatDate(plan.createdAt)}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1">
-                      <button type="button" onClick={() => openEdit(plan)} className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800" title="Edit">
-                        <Edit2 size={16} />
-                      </button>
-                      {plan.isActive ? (
-                        <>
-                          <button type="button" onClick={() => openAssign(plan)} className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800" title="Assign to org">
-                            <Link2 size={16} />
-                          </button>
-                          <button type="button" onClick={() => handleDeactivate(plan)} className="p-1.5 rounded text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20" title="Deactivate">
-                            <Pause size={16} />
-                          </button>
-                        </>
-                      ) : (
-                        <button type="button" onClick={() => handleReactivate(plan)} className="p-1.5 rounded text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20" title="Reactivate">
-                          <Play size={16} />
-                        </button>
-                      )}
-                      <button type="button" onClick={() => handleDelete(plan)} className="p-1.5 rounded text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20" title="Delete permanently">
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {plans.length === 0 && (
-                <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-gray-500">No subscription plans yet.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <Card>
+        <DataTable
+          caption="Subscription plans"
+          columns={columns}
+          rows={plans}
+          loading={loading}
+          rowClassName={(p) => (p.isActive ? undefined : 'opacity-70')}
+          empty={
+            <EmptyState
+              icon={Layers}
+              title="No plans yet"
+              description="Create a plan so customers can subscribe."
+              action={
+                <Button icon={Plus} onClick={openCreate}>
+                  New plan
+                </Button>
+              }
+            />
+          }
+        />
+      </Card>
 
-      {(modal === 'create' || modal?.type === 'edit') && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold mb-4">{modal === 'create' ? 'Create subscription plan' : `Edit ${modal.plan.name}`}</h3>
-            <form onSubmit={handleSave}>
-              <PlanFormFields form={form} setForm={setForm} />
-              <div className="flex justify-end gap-2 pt-4 mt-4 border-t dark:border-gray-700">
-                <button type="button" onClick={closeModal} className="px-4 py-2 rounded-lg border dark:border-gray-600">Cancel</button>
-                <button type="submit" disabled={saving} className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50">
-                  {saving ? 'Saving...' : modal === 'create' ? 'Create' : 'Save changes'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <Dialog
+        open={editing}
+        onClose={closeModal}
+        title={modal === 'create' ? 'New plan' : `Edit ${modal?.plan?.name || 'plan'}`}
+        description={modal?.type === 'edit' ? 'Limit changes are checked against organizations already on this plan.' : undefined}
+        size="lg"
+        footer={
+          <>
+            <Button variant="secondary" onClick={closeModal}>
+              Cancel
+            </Button>
+            <Button type="submit" form="plan-form" loading={saving}>
+              {modal === 'create' ? 'Create plan' : 'Save changes'}
+            </Button>
+          </>
+        }
+      >
+        <PlanForm form={form} setForm={setForm} onSubmit={handleSave} />
+      </Dialog>
 
-      {modal?.type === 'assign' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 max-w-md w-full">
-            <h3 className="text-lg font-semibold mb-2">Assign plan to organization</h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">Plan: {modal.plan.name}</p>
-            <select value={assignOrgId} onChange={(e) => setAssignOrgId(e.target.value)} className="w-full rounded-lg border dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2">
-              <option value="">Select organization...</option>
-              {organizations.map((o) => (
-                <option key={o._id} value={o._id}>{o.name}</option>
-              ))}
-            </select>
-            <div className="flex justify-end gap-2 mt-4">
-              <button type="button" onClick={closeModal} className="px-4 py-2 rounded-lg border dark:border-gray-600">Cancel</button>
-              <button type="button" onClick={handleAssign} disabled={!assignOrgId} className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">Assign</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Dialog
+        open={modal?.type === 'assign'}
+        onClose={closeModal}
+        title={`Assign ${modal?.plan?.name || 'plan'}`}
+        description="Moves an active organization onto this plan and updates its limits."
+        size="sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={closeModal}>
+              Cancel
+            </Button>
+            <Button onClick={handleAssign} disabled={!assignOrgId} loading={saving}>
+              Assign plan
+            </Button>
+          </>
+        }
+      >
+        <Field label="Organization">
+          <Select value={assignOrgId} onChange={(e) => setAssignOrgId(e.target.value)} data-autofocus>
+            <option value="">Select an organization…</option>
+            {organizations.map((o) => (
+              <option key={o._id} value={o._id}>
+                {o.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </Dialog>
     </div>
   );
 };

@@ -75,6 +75,25 @@ const cameraSchema = new mongoose.Schema(
       resolution: { type: String },
       fps: { type: Number },
     },
+    // ONVIF connection. streamUrl holds the device-reported RTSP address without credentials; the
+    // password is encrypted (utils/secretBox) and only added server-side when a stream is opened.
+    onvif: {
+      host: { type: String, trim: true },
+      port: { type: Number, min: 1, max: 65535 },
+      username: { type: String, trim: true },
+      passwordEnc: { type: String, select: false },
+      hasPassword: { type: Boolean },
+      profileToken: { type: String, trim: true },
+      profileName: { type: String, trim: true },
+      deviceInfo: {
+        manufacturer: { type: String },
+        model: { type: String },
+        firmwareVersion: { type: String },
+        serialNumber: { type: String },
+        hardwareId: { type: String },
+      },
+      lastSyncedAt: { type: Date },
+    },
     settings: {
       detectionEnabled: { type: Boolean, default: true },
       notes: { type: String, trim: true },
@@ -103,6 +122,13 @@ const cameraSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
+    toJSON: {
+      // A document returned by create()/save() still holds the encrypted password; never serialize it.
+      transform(doc, ret) {
+        if (ret.onvif) delete ret.onvif.passwordEnc;
+        return ret;
+      },
+    },
   }
 );
 

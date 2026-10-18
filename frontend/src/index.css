@@ -2,29 +2,177 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Design tokens (RGB triplets so Tailwind opacity modifiers work).
+ * Neutral interface; color is reserved for state: critical = fire / destructive, warning, success, info.
+ */
 @layer base {
-  * {
-    @apply border-gray-200 dark:border-gray-700;
+  :root {
+    color-scheme: light;
+    --canvas: 246 247 249;
+    --surface: 255 255 255;
+    --surface-2: 241 243 246;
+    --surface-3: 230 233 238;
+    --line: 226 229 235;
+    --line-strong: 206 212 221;
+    --fg: 11 18 32;
+    --fg-muted: 74 85 104;
+    --fg-subtle: 95 107 127;
+    --accent: 43 89 217;
+
+    --critical: 217 45 32;
+    --critical-fg: 180 35 24;
+    --critical-soft: 254 243 242;
+    --critical-line: 253 205 199;
+    --warning: 220 104 3;
+    --warning-fg: 147 55 13;
+    --warning-soft: 255 250 235;
+    --warning-line: 254 223 137;
+    --success: 7 148 85;
+    --success-fg: 6 118 71;
+    --success-soft: 236 253 243;
+    --success-line: 171 239 198;
+    --info: 43 89 217;
+    --info-fg: 31 68 184;
+    --info-soft: 238 243 255;
+    --info-line: 199 214 254;
+
+    --sidebar: 11 17 29;
+    --sidebar-fg: 236 240 246;
+    --sidebar-muted: 148 160 180;
+    --sidebar-hover: 24 32 48;
+    --sidebar-line: 31 40 58;
   }
+
+  .dark {
+    color-scheme: dark;
+    --canvas: 10 13 19;
+    --surface: 15 20 28;
+    --surface-2: 22 28 38;
+    --surface-3: 32 39 52;
+    --line: 34 41 54;
+    --line-strong: 50 59 76;
+    --fg: 232 236 242;
+    --fg-muted: 163 173 189;
+    --fg-subtle: 133 144 162;
+    --accent: 142 168 245;
+
+    --critical: 220 48 36;
+    --critical-fg: 253 162 155;
+    --critical-soft: 42 20 20;
+    --critical-line: 98 34 30;
+    --warning: 247 144 9;
+    --warning-fg: 254 200 75;
+    --warning-soft: 42 32 16;
+    --warning-line: 92 62 18;
+    --success: 23 178 106;
+    --success-fg: 117 224 167;
+    --success-soft: 15 42 28;
+    --success-line: 25 84 54;
+    --info: 107 139 240;
+    --info-fg: 164 188 253;
+    --info-soft: 20 29 56;
+    --info-line: 38 56 108;
+
+    --sidebar: 8 11 17;
+    --sidebar-fg: 236 240 246;
+    --sidebar-muted: 140 152 172;
+    --sidebar-hover: 22 29 42;
+    --sidebar-line: 28 35 50;
+  }
+
+  * {
+    @apply border-line;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+
   body {
-    @apply bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100;
+    @apply bg-canvas text-fg antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+
+  h1, h2, h3, h4 {
+    @apply tracking-tight;
+  }
+
+  /* One consistent, visible keyboard focus indicator; none for mouse clicks. */
+  :focus {
+    outline: none;
+  }
+  :focus-visible {
+    outline: 2px solid rgb(var(--accent));
+    outline-offset: 2px;
+    border-radius: 0.25rem;
+  }
+
+  ::selection {
+    background: rgb(43 89 217 / 0.2);
+  }
+
+  /* Tabular numerals wherever numbers are compared. */
+  table, .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
 
 @layer components {
-  .btn-primary {
-    @apply bg-primary-600 hover:bg-primary-700 text-white font-medium py-2 px-4 rounded-lg transition-colors;
+  /* Buttons (React <Button> uses the same recipes). */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors duration-150 disabled:pointer-events-none disabled:opacity-50 h-9 px-3.5;
   }
-
+  .btn-primary {
+    @apply btn bg-brand-600 text-white shadow-xs hover:bg-brand-700 active:bg-brand-800;
+  }
   .btn-secondary {
-    @apply bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100 font-medium py-2 px-4 rounded-lg transition-colors;
+    @apply btn border border-line-strong bg-surface text-fg shadow-xs hover:bg-surface-2;
+  }
+  .btn-ghost {
+    @apply btn text-fg-muted hover:bg-surface-2 hover:text-fg;
+  }
+  .btn-danger {
+    @apply btn bg-critical text-white shadow-xs hover:brightness-95;
   }
 
   .card {
-    @apply bg-white dark:bg-gray-800 rounded-lg shadow-md p-6;
+    @apply rounded-lg border border-line bg-surface;
   }
 
   .input-field {
-    @apply w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500;
+    @apply block h-9 w-full rounded-md border border-line-strong bg-surface px-3 text-sm text-fg shadow-xs placeholder:text-fg-subtle transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/25 disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-fg-subtle;
+  }
+  textarea.input-field {
+    @apply h-auto py-2;
+  }
+
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-fg;
+  }
+
+  .eyebrow {
+    @apply text-2xs font-semibold uppercase tracking-[0.08em] text-fg-subtle;
+  }
+
+  .link {
+    @apply font-medium text-brand-600 underline-offset-2 hover:underline dark:text-brand-300;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--line-strong)) transparent;
   }
 }

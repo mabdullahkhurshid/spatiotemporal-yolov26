@@ -57,13 +57,14 @@ exports.getIncidentStats = async (req, res, next) => {
 exports.getIncidents = async (req, res, next) => {
   try {
     const query = {};
+    let assignedCameraIds = null;
 
     if (req.user.role === 'org_admin' || req.user.role === 'operator') {
       query.organizationId = req.user.organizationId;
     }
 
     if (req.user.role === 'operator') {
-      const assignedCameraIds = await OperatorCameraAssignment.find({
+      assignedCameraIds = await OperatorCameraAssignment.find({
         operatorId: req.user._id,
       }).distinct('cameraId');
       query.cameraId = { $in: assignedCameraIds };
@@ -72,8 +73,14 @@ exports.getIncidents = async (req, res, next) => {
     if (req.query.status) {
       query.status = req.query.status;
     }
+    // Operators stay limited to their assigned cameras
     if (req.query.cameraId) {
-      query.cameraId = req.query.cameraId;
+      if (assignedCameraIds) {
+        const isAssigned = assignedCameraIds.some((id) => id.toString() === String(req.query.cameraId));
+        query.cameraId = isAssigned ? req.query.cameraId : { $in: [] };
+      } else {
+        query.cameraId = req.query.cameraId;
+      }
     }
 
     const incidents = await FireIncident.find(query)

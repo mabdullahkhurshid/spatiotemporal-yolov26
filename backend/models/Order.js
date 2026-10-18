@@ -12,6 +12,11 @@ const orderSchema = new mongoose.Schema(
       enum: ['basic', 'pro', 'enterprise'],
       required: true,
     },
+    // Name of the plan at purchase time (the legacy enum above cannot represent custom plan names).
+    planName: {
+      type: String,
+      trim: true,
+    },
     amount: {
       type: Number,
       required: true,

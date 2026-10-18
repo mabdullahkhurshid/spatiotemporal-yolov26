@@ -1,110 +1,125 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useParams } from "react-router-dom";
 
 import { useSelector, useDispatch } from "react-redux";
 
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 
-import { setUser, logout, getMe } from "./store/slices/authSlice";
+import { restoreSession } from "./store/slices/authSlice";
+import { getAccessToken, purgeLegacyStoredTokens } from "./services/tokenStore";
 
 import { socketService } from "./services/socketService";
+
+// Eager: the most common first page, so it paints without waiting on a second chunk.
+import LandingPage from "./pages/public/LandingPage";
 
 
 
 // Auth pages
 
-import Login from "./pages/auth/Login";
+const Login = lazy(() => import("./pages/auth/Login"));
 
-import Register from "./pages/auth/Register";
+const Register = lazy(() => import("./pages/auth/Register"));
 
-import ForgotPassword from "./pages/auth/ForgotPassword";
+const ForgotPassword = lazy(() => import("./pages/auth/ForgotPassword"));
 
-import ResetPassword from "./pages/auth/ResetPassword";
+const ResetPassword = lazy(() => import("./pages/auth/ResetPassword"));
 
-import OAuthCallback from "./pages/auth/OAuthCallback";
+const OAuthCallback = lazy(() => import("./pages/auth/OAuthCallback"));
 
-import SetPassword from "./pages/auth/SetPassword";
+const SetPassword = lazy(() => import("./pages/auth/SetPassword"));
 
 
 
 // Layouts
 
-import SuperAdminLayout from "./layouts/SuperAdminLayout";
+const SuperAdminLayout = lazy(() => import("./layouts/SuperAdminLayout"));
 
-import OrgAdminLayout from "./layouts/OrgAdminLayout";
+const OrgAdminLayout = lazy(() => import("./layouts/OrgAdminLayout"));
 
-import OperatorLayout from "./layouts/OperatorLayout";
+const OperatorLayout = lazy(() => import("./layouts/OperatorLayout"));
 
-import CustomerLayout from "./layouts/CustomerLayout";
+const CustomerLayout = lazy(() => import("./layouts/CustomerLayout"));
 
 
 
 // Super Admin pages
 
-import SuperAdminDashboard from "./pages/superadmin/Dashboard";
+const SuperAdminDashboard = lazy(() => import("./pages/superadmin/Dashboard"));
 
-import SuperAdminOrganizations from "./pages/superadmin/Organizations";
+const SuperAdminOrganizations = lazy(() => import("./pages/superadmin/Organizations"));
 
-import SuperAdminSubscriptionPlans from "./pages/superadmin/SubscriptionPlans";
+const SuperAdminSubscriptionPlans = lazy(() => import("./pages/superadmin/SubscriptionPlans"));
 
-import SuperAdminUsers from "./pages/superadmin/Users";
+const SuperAdminUsers = lazy(() => import("./pages/superadmin/Users"));
 
-import SuperAdminOrders from "./pages/superadmin/Orders";
+const SuperAdminOrders = lazy(() => import("./pages/superadmin/Orders"));
 
-import SuperAdminAlerts from "./pages/superadmin/Alerts";
+const SuperAdminAlerts = lazy(() => import("./pages/superadmin/Alerts"));
 
 
 
 // Org Admin pages
 
-import OrgAdminDashboard from "./pages/orgadmin/Dashboard";
+const OrgAdminDashboard = lazy(() => import("./pages/orgadmin/Dashboard"));
 
-import OrgAdminCameras from "./pages/orgadmin/Cameras";
+const OrgAdminCameras = lazy(() => import("./pages/orgadmin/Cameras"));
 
-import OrgAdminAlerts from "./pages/orgadmin/Alerts";
+const OrgAdminAlerts = lazy(() => import("./pages/orgadmin/Alerts"));
 
-import OrgAdminOperators from "./pages/orgadmin/Operators";
+const OrgAdminOperators = lazy(() => import("./pages/orgadmin/Operators"));
 
-import OrgAdminReports from "./pages/orgadmin/Reports";
+const OrgAdminReports = lazy(() => import("./pages/orgadmin/Reports"));
 
-import OrgAdminSubscription from "./pages/orgadmin/Subscription";
+const OrgAdminSubscription = lazy(() => import("./pages/orgadmin/Subscription"));
 
 
 
 // Operator pages
 
-import OperatorDashboard from "./pages/operator/Dashboard";
+const OperatorDashboard = lazy(() => import("./pages/operator/Dashboard"));
 
-import OperatorCameras from "./pages/operator/Cameras";
+const OperatorCameras = lazy(() => import("./pages/operator/Cameras"));
 
-import OperatorAlerts from "./pages/operator/Alerts";
+const OperatorAlerts = lazy(() => import("./pages/operator/Alerts"));
 
 
 
 // Public & customer portal pages
 
-import LandingPage from "./pages/public/LandingPage";
 
-import CustomerDashboard from "./pages/customer/Dashboard";
+const CustomerDashboard = lazy(() => import("./pages/customer/Dashboard"));
 
-import CustomerPlansPage from "./pages/customer/PlansPage";
+const CustomerPlansPage = lazy(() => import("./pages/customer/PlansPage"));
 
-import CustomerSubscriptionPage from "./pages/customer/SubscriptionPage";
+const CustomerSubscriptionPage = lazy(() => import("./pages/customer/SubscriptionPage"));
 
-import CustomerHelpPage from "./pages/customer/HelpPage";
-import ContactSupportPage from "./pages/customer/ContactSupportPage";
+const CustomerHelpPage = lazy(() => import("./pages/customer/HelpPage"));
+const ContactSupportPage = lazy(() => import("./pages/customer/ContactSupportPage"));
 
-import CustomerSettingsPage from "./pages/customer/SettingsPage";
+const CustomerSettingsPage = lazy(() => import("./pages/customer/SettingsPage"));
 
-import ProfileViewPage from "./pages/customer/ProfileViewPage";
+const ProfileViewPage = lazy(() => import("./pages/customer/ProfileViewPage"));
 
-import ProfileEditPage from "./pages/customer/ProfileEditPage";
+const ProfileEditPage = lazy(() => import("./pages/customer/ProfileEditPage"));
 
-import SubscribePage from "./pages/customer/SubscribePage";
-import DowngradePrepPage from "./pages/customer/DowngradePrepPage";
+const SubscribePage = lazy(() => import("./pages/customer/SubscribePage"));
+const DowngradePrepPage = lazy(() => import("./pages/customer/DowngradePrepPage"));
 
 import { getDashboardPathForRole, PORTAL_ROLES } from "./utils/roleRoutes";
 
 
+
+const PageLoader = () => (
+  <div className="min-h-screen flex items-center justify-center">
+    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-600" />
+  </div>
+);
+
+// <Navigate> does not interpolate route params, so carry :planId over explicitly.
+const LegacySubscribeRedirect = () => {
+  const { planId } = useParams();
+  return <Navigate to={`/customer/subscribe/${planId}`} replace />;
+};
 
 const ProtectedRoute = ({ children, allowedRoles }) => {
 
@@ -147,63 +162,21 @@ function App() {
 
 
   useEffect(() => {
-
-    const token = localStorage.getItem("accessToken");
-
-    const userData = localStorage.getItem("user");
-
-
-
-    if (token && userData) {
-
-      try {
-
-        const parsedUser = JSON.parse(userData);
-
-        dispatch(setUser(parsedUser));
-
-
-
-        socketService.connect(token);
-
-
-
-        if (!user) {
-
-          dispatch(getMe());
-
-        }
-
-      } catch (error) {
-
-        console.error("Auth restore error:", error);
-
-        dispatch(logout());
-
-      }
-
+    purgeLegacyStoredTokens();
+    // A cached profile means this browser had a session; the httpOnly refresh cookie decides if it is still valid.
+    if (localStorage.getItem("user")) {
+      dispatch(restoreSession()).finally(() => setAuthChecked(true));
+    } else {
+      setAuthChecked(true);
     }
-
-
-
-    setAuthChecked(true);
-
   }, [dispatch]);
 
-
-
   useEffect(() => {
-
     if (isAuthenticated && user) {
-
-      socketService.connect(localStorage.getItem("accessToken"));
-
+      socketService.connect(getAccessToken());
     } else {
-
       socketService.disconnect();
-
     }
-
   }, [isAuthenticated, user]);
 
 
@@ -218,6 +191,7 @@ function App() {
 
   return (
 
+    <Suspense fallback={<PageLoader />}>
     <Routes>
 
       <Route path="/" element={<LandingPage />} />
@@ -328,7 +302,7 @@ function App() {
 
       <Route path="/profile/edit" element={<Navigate to="/customer/profile/edit" replace />} />
 
-      <Route path="/subscribe/:planId" element={<Navigate to="/customer/subscribe/:planId" replace />} />
+      <Route path="/subscribe/:planId" element={<LegacySubscribeRedirect />} />
 
       <Route path="/subscribe" element={<Navigate to="/customer/subscribe" replace />} />
 
@@ -522,6 +496,8 @@ function App() {
       <Route path="*" element={<Navigate to="/" replace />} />
 
     </Routes>
+
+    </Suspense>
 
   );
 

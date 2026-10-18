@@ -1,308 +1,183 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import {
-  Building2,
-  Calendar,
-  Camera,
-  CreditCard,
-  Package,
-  Shield,
-  Users,
-} from 'lucide-react';
+import { ArrowRight, Building2, Camera, CheckCircle2, Package, RefreshCw, Users } from 'lucide-react';
 import { getAccountSummary } from '../../services/customerApi';
 import AccountStatusBanner from '../../components/account/AccountStatusBanner';
 import UsageBar from '../../components/account/UsageBar';
-import { SubscriptionPageSkeleton } from '../../components/ui/PortalSkeletons';
-import {
-  accountStatusBadgeClass,
-  formatAccountCurrency,
-  formatAccountDate,
-  roleLabel,
-} from '../../utils/accountFormatting';
+import PageHeader from '../../components/ui/PageHeader';
+import Button from '../../components/ui/Button';
+import Card, { CardBody, CardHeader } from '../../components/ui/Card';
+import { StatusBadge } from '../../components/ui/Badge';
+import DataTable from '../../components/ui/DataTable';
+import { EmptyState, ErrorState, Notice, Skeleton } from '../../components/ui/Feedback';
+import { formatCurrency, formatDate, daysUntil } from '../../utils/format';
+import { roleLabel } from '../../utils/accountFormatting';
 
+const capitalize = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : '—');
+
+const Detail = ({ label, children }) => (
+  <div>
+    <dt className="text-xs text-fg-muted">{label}</dt>
+    <dd className="mt-1 text-sm font-medium text-fg">{children}</dd>
+  </div>
+);
+
+const SubscriptionSkeleton = () => (
+  <div className="space-y-6">
+    <Skeleton className="h-8 w-56" />
+    <div className="grid gap-6 lg:grid-cols-3">
+      <Skeleton className="h-56 lg:col-span-2" />
+      <Skeleton className="h-56" />
+    </div>
+    <Skeleton className="h-40" />
+  </div>
+);
+
+/** Subscription, usage and billing history. Also rendered at /orgadmin/subscription. */
 const SubscriptionPage = () => {
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [loading, setLoading] = useState(true);
-  const [data, setData] = useState(null);
+  const [state, setState] = useState({ loading: true, data: null, error: null });
   const [completionNotice, setCompletionNotice] = useState(null);
   const completionHandled = useRef(false);
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const response = await getAccountSummary();
-        setData(response.data.data);
-      } catch (error) {
-        toast.error(error.response?.data?.message || 'Failed to load subscription');
-      } finally {
-        setLoading(false);
-      }
-    };
+  const load = async () => {
+    setState((s) => ({ ...s, loading: true, error: null }));
+    try {
+      const response = await getAccountSummary();
+      setState({ loading: false, data: response.data.data, error: null });
+    } catch (error) {
+      setState({ loading: false, data: null, error: error.response?.data?.message || 'Failed to load subscription' });
+    }
+  };
 
+  useEffect(() => {
     load();
   }, []);
 
   useEffect(() => {
-    if (completionHandled.current || searchParams.get('success') !== '1') {
-      return;
-    }
-
+    if (completionHandled.current || searchParams.get('success') !== '1') return;
     completionHandled.current = true;
-
     const renewed = searchParams.get('renewed') === '1';
     setCompletionNotice(renewed ? 'renewed' : 'purchase');
-    toast.success(
-      renewed ? 'Subscription renewed successfully!' : 'Subscription activated successfully!',
-    );
-
+    toast.success(renewed ? 'Subscription renewed' : 'Subscription activated');
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete('success');
     nextParams.delete('renewed');
     setSearchParams(nextParams, { replace: true });
   }, [searchParams, setSearchParams]);
 
-  if (loading) {
-    return <SubscriptionPageSkeleton />;
-  }
+  if (state.loading) return <SubscriptionSkeleton />;
+  if (state.error) return <ErrorState description={state.error} onRetry={load} />;
 
+  const { data } = state;
   if (!data?.flags?.hasOrganization) {
     return (
-      <div className="max-w-2xl mx-auto space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Subscription</h1>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            View your plan, organization, and billing history.
-          </p>
-        </div>
-        <div className="card border-dashed border-2 border-primary-200 dark:border-primary-800 text-center py-10">
-          <Package className="mx-auto text-primary-500 mb-3" size={32} />
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            No subscription yet
-          </h2>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-2 max-w-md mx-auto">
-            Subscribe to a plan to create your organization and unlock the org admin dashboard.
-          </p>
-          <Link to="/customer/plans" className="btn-primary inline-flex mt-6">
-            Browse Plans
-          </Link>
-        </div>
+      <div>
+        <PageHeader title="Subscription" description="Your plan, organization and billing history." />
+        <Card>
+          <EmptyState
+            icon={Package}
+            title="You don't have a subscription yet"
+            description="Choose a plan to create your organization and start monitoring your cameras."
+            action={
+              <Button as={Link} to="/customer/plans" iconRight={ArrowRight}>
+                Browse plans
+              </Button>
+            }
+          />
+        </Card>
       </div>
     );
   }
 
   const { user, organization, subscription, orders = [], usage, flags } = data;
   const plan = subscription?.planDetails;
-  const planName = plan?.name || subscription?.plan || organization?.subscriptionPlan || '—';
+  const planName = plan?.name || capitalize(subscription?.plan || organization?.subscriptionPlan);
   const currency = plan?.currency || 'USD';
   const billingCycle = subscription?.billingCycle || plan?.billingCycle || 'monthly';
   const subStatus = subscription?.status || organization?.subscriptionStatus || 'pending';
+  const endDate = subscription?.endDate || organization?.subscriptionEndDate;
+  const remaining = daysUntil(endDate);
+  const canRenew = flags?.isSubscriptionExpired && !flags?.isOrgSuspended;
+
+  const orderColumns = [
+    { key: 'date', header: 'Date', primary: true, cell: (o) => <span className="font-medium text-fg">{formatDate(o.createdAt)}</span> },
+    { key: 'plan', header: 'Plan', cell: (o) => <span className="text-sm">{o.planName || capitalize(o.subscriptionPlan)}</span> },
+    { key: 'amount', header: 'Amount', align: 'right', cell: (o) => <span className="tabular text-sm">{formatCurrency(o.amount, currency)}</span> },
+    { key: 'status', header: 'Status', cell: (o) => <StatusBadge kind="order" value={o.status} /> },
+  ];
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Subscription</h1>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-          Plan details, organization info, usage, and order history.
-        </p>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Subscription"
+        description="Your plan, usage against its limits, and billing history."
+        actions={
+          canRenew ? (
+            <Button as={Link} to="/customer/plans" icon={RefreshCw}>
+              Renew or change plan
+            </Button>
+          ) : (
+            flags?.hasActiveSubscription && (
+              <Button as={Link} to="/orgadmin/dashboard" variant="secondary" iconRight={ArrowRight}>
+                Open monitoring
+              </Button>
+            )
+          )
+        }
+        className="mb-0"
+      />
 
-      {completionNotice === 'renewed' && (
-        <div className="rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 p-4">
-          <p className="font-semibold text-green-800 dark:text-green-200">
-            Subscription renewed
-          </p>
-          <p className="text-sm text-green-700 dark:text-green-300 mt-1">
-            Your plan is active again with updated billing dates. Open your org dashboard to
-            manage cameras and operators.
-          </p>
-        </div>
-      )}
-
-      {completionNotice === 'purchase' && (
-        <div className="rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 p-4">
-          <p className="font-semibold text-green-800 dark:text-green-200">
-            Welcome! Your subscription is now active.
-          </p>
-          <p className="text-sm text-green-700 dark:text-green-300 mt-1">
-            You are now an Organization Admin. Open your org dashboard when you are ready to
-            manage cameras and operators.
-          </p>
-        </div>
+      {completionNotice && (
+        <Notice tone="success" icon={CheckCircle2} title={completionNotice === 'renewed' ? 'Subscription renewed' : 'Welcome aboard — your subscription is active'}>
+          {completionNotice === 'renewed'
+            ? 'Your plan is active again with new billing dates. Monitoring has resumed.'
+            : "You're now the organization admin. Add your cameras and invite operators from the monitoring area."}
+        </Notice>
       )}
 
       <AccountStatusBanner flags={flags} organization={organization} subscription={subscription} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="card">
-          <div className="flex items-start justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <div className="p-3 rounded-lg bg-primary-600">
-                <Package className="text-white" size={22} />
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader title={`${planName} plan`} description={`Billed ${billingCycle}`} icon={Package} actions={<StatusBadge kind="subscription" value={subStatus} />} />
+          <CardBody>
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4">
+              <Detail label="Price">
+                <span className="tabular">{formatCurrency(subscription?.price, currency)}</span>
+                <span className="font-normal text-fg-muted"> / {billingCycle === 'yearly' ? 'year' : 'month'}</span>
+              </Detail>
+              <Detail label="Started">{formatDate(subscription?.startDate || organization?.subscriptionStartDate)}</Detail>
+              <Detail label={remaining != null && remaining < 0 ? 'Ended' : 'Renews / ends'}>{formatDate(endDate)}</Detail>
+              <Detail label="Time remaining">
+                {remaining == null ? '—' : remaining < 0 ? <span className="text-critical-fg">Expired</span> : `${remaining} day${remaining === 1 ? '' : 's'}`}
+              </Detail>
+            </dl>
+            {usage && (
+              <div className="mt-6 grid gap-6 border-t border-line pt-5 sm:grid-cols-2">
+                <UsageBar label="Cameras" used={usage.camerasUsed} limit={usage.maxCameras} icon={Camera} />
+                <UsageBar label="Operators" used={usage.operatorsUsed} limit={usage.maxOperators} icon={Users} />
               </div>
-              <div>
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">{planName}</h2>
-                <p className="text-sm text-gray-600 dark:text-gray-400 capitalize">
-                  {billingCycle} billing
-                </p>
-              </div>
-            </div>
-            <span
-              className={`px-3 py-1 rounded-full text-xs font-medium capitalize ${accountStatusBadgeClass(subStatus)}`}
-            >
-              {subStatus}
-            </span>
-          </div>
+            )}
+          </CardBody>
+        </Card>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-sm text-gray-600 dark:text-gray-400 flex items-center gap-1">
-                <CreditCard size={14} />
-                Price
-              </p>
-              <p className="text-lg font-semibold text-gray-900 dark:text-white mt-1">
-                {formatAccountCurrency(subscription?.price, currency)}
-                <span className="text-sm font-normal text-gray-500 dark:text-gray-400">
-                  {' '}
-                  / {billingCycle === 'yearly' ? 'year' : 'month'}
-                </span>
-              </p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-600 dark:text-gray-400 flex items-center gap-1">
-                <Shield size={14} />
-                Your role
-              </p>
-              <p className="text-base font-medium text-gray-900 dark:text-white mt-1">
-                {roleLabel(user?.role)}
-              </p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Start date</p>
-              <p className="text-base font-medium text-gray-900 dark:text-white mt-1">
-                {formatAccountDate(subscription?.startDate || organization?.subscriptionStartDate)}
-              </p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-600 dark:text-gray-400 flex items-center gap-1">
-                <Calendar size={14} />
-                Expiry date
-              </p>
-              <p className="text-base font-medium text-gray-900 dark:text-white mt-1">
-                {formatAccountDate(subscription?.endDate || organization?.subscriptionEndDate)}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="flex items-start justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="p-3 rounded-lg bg-gray-100 dark:bg-gray-800">
-                <Building2 className="text-primary-600 dark:text-amber-400" size={22} />
-              </div>
-              <div>
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                  {organization?.name}
-                </h2>
-                <p className="text-sm text-gray-600 dark:text-gray-400">{organization?.email}</p>
-              </div>
-            </div>
-            <span
-              className={`px-3 py-1 rounded-full text-xs font-medium ${accountStatusBadgeClass(organization?.status)}`}
-            >
-              {organization?.status}
-            </span>
-          </div>
-
-          {organization?.phone && (
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">{organization.phone}</p>
-          )}
-
-          {flags?.hasActiveSubscription && (
-            <Link to="/orgadmin/dashboard" className="btn-primary inline-flex text-sm">
-              Open Org Dashboard
-            </Link>
-          )}
-        </div>
+        <Card>
+          <CardHeader title={organization?.name || 'Organization'} description={organization?.email} icon={Building2} actions={<StatusBadge kind="org" value={organization?.status} />} />
+          <CardBody>
+            <dl className="space-y-4">
+              <Detail label="Your role">{roleLabel(user?.role)}</Detail>
+              {organization?.phone && <Detail label="Phone">{organization.phone}</Detail>}
+            </dl>
+          </CardBody>
+        </Card>
       </div>
 
-      {usage && (
-        <div className="card">
-          <h2 className="text-xl font-semibold mb-6 text-gray-900 dark:text-white">
-            Usage vs limits
-          </h2>
-          <div className="grid gap-6 sm:grid-cols-2">
-            <UsageBar
-              label="Cameras"
-              used={usage.camerasUsed}
-              limit={usage.maxCameras}
-              icon={Camera}
-            />
-            <UsageBar
-              label="Operators"
-              used={usage.operatorsUsed}
-              limit={usage.maxOperators}
-              icon={Users}
-            />
-          </div>
-        </div>
-      )}
-
-      <div className="card">
-        <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Order history</h2>
-        {orders.length === 0 ? (
-          <p className="text-gray-600 dark:text-gray-400">No past orders found.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-200 dark:border-gray-700">
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600 dark:text-gray-400">
-                    Date
-                  </th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600 dark:text-gray-400">
-                    Plan
-                  </th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600 dark:text-gray-400">
-                    Amount
-                  </th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600 dark:text-gray-400">
-                    Status
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {orders.map((order) => (
-                  <tr key={order._id} className="border-b border-gray-100 dark:border-gray-800">
-                    <td className="py-3 px-4 text-sm">{formatAccountDate(order.createdAt)}</td>
-                    <td className="py-3 px-4 text-sm capitalize">{order.subscriptionPlan}</td>
-                    <td className="py-3 px-4 text-sm">
-                      {formatAccountCurrency(order.amount, currency)}
-                    </td>
-                    <td className="py-3 px-4">
-                      <span
-                        className={`px-2 py-1 rounded text-xs capitalize ${accountStatusBadgeClass(order.status)}`}
-                      >
-                        {order.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {flags?.hasOrganization && !flags?.hasActiveSubscription && !flags?.isOrgSuspended && (
-        <div className="text-center">
-          <button type="button" onClick={() => navigate('/customer/plans')} className="btn-primary">
-            Renew or change plan
-          </button>
-        </div>
-      )}
+      <Card>
+        <CardHeader title="Billing history" description="Payments are recorded when a plan is purchased or renewed." />
+        <DataTable caption="Billing history" columns={orderColumns} rows={orders} empty={<p className="px-5 py-8 text-center text-sm text-fg-muted">No orders yet.</p>} />
+      </Card>
     </div>
   );
 };

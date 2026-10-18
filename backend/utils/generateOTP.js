@@ -1,15 +1,22 @@
-// Generate 6-digit OTP
+const crypto = require('crypto');
+
+// Generate 6-digit OTP (cryptographically secure)
 const generateOTP = () => {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return crypto.randomInt(100000, 1000000).toString();
 };
 
 // Generate random token
 const generateToken = (length = 32) => {
-  const crypto = require('crypto');
   return crypto.randomBytes(length).toString('hex');
+};
+
+// Hash a secret before storing it, so a database leak does not expose usable codes or tokens
+const hashToken = (value) => {
+  return crypto.createHash('sha256').update(String(value)).digest('hex');
 };
 
 module.exports = {
   generateOTP,
   generateToken,
+  hashToken,
 };

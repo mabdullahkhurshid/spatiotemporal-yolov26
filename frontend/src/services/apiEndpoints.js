@@ -59,3 +59,8 @@ export const permanentDeleteCamera = (id) => api.delete(`/cameras/${id}/permanen
 export const getIncidents = (params) => api.get('/incidents', { params });
 export const getIncident = (id) => api.get(`/incidents/${id}`);
 export const getIncidentStats = (params) => api.get('/incidents/stats', { params });
+
+// ONVIF cameras (Org Admin / Super Admin)
+export const discoverOnvifCameras = () => api.post('/cameras/onvif/discover', {}, { timeout: 20000 });
+export const probeOnvifCamera = (data) => api.post('/cameras/onvif/probe', data, { timeout: 30000 });
+export const refreshOnvifCamera = (id) => api.post(`/cameras/${id}/onvif/refresh`, {}, { timeout: 30000 });

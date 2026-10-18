@@ -3,6 +3,10 @@ const Organization = require('../models/Organization');
 const OperatorCameraAssignment = require('../models/OperatorCameraAssignment');
 const User = require('../models/User');
 const Alert = require('../models/Alert');
+const FireIncident = require('../models/FireIncident');
+const { invalidateCameraAudience } = require('../sockets/emitters');
+const { OnvifError } = require('../services/onvif');
+const { applyOnvifConnection, onvifConnectionChanged, sendOnvifError } = require('./onvifController');
 
 // @desc    Get camera usage vs plan limit
 // @route   GET /api/cameras/usage
@@ -156,11 +160,13 @@ exports.createCamera = async (req, res, next) => {
       });
     }
 
-    const camera = await Camera.create({
+    const isOnvif = cameraType === 'onvif';
+    const camera = new Camera({
       name: name || label,
       label: label || name,
-      ipAddress: ipAddress || undefined,
-      streamUrl: streamUrl || undefined,
+      // ONVIF cameras get their address and stream from the device itself (below).
+      ipAddress: isOnvif ? undefined : ipAddress || undefined,
+      streamUrl: isOnvif ? undefined : streamUrl || undefined,
       location,
       organizationId: orgId,
       installationDate: installationDate ? new Date(installationDate) : undefined,
@@ -173,12 +179,32 @@ exports.createCamera = async (req, res, next) => {
         notes: settings?.notes || undefined,
       },
     });
+    if (isOnvif) {
+      await applyOnvifConnection(camera, req.body.onvif);
+    }
+    await camera.save();
+
+    // Parallel creates can all pass the count check above. Keep only the earliest cameras (by _id)
+    // within the plan limit; a camera ranked beyond it is removed again.
+    const earlier = await Camera.countDocuments({
+      organizationId: orgId,
+      isDeleted: false,
+      _id: { $lt: camera._id },
+    });
+    if (earlier >= maxCameras) {
+      await Camera.deleteOne({ _id: camera._id });
+      return res.status(400).json({
+        success: false,
+        message: `Camera limit reached. Maximum ${maxCameras} cameras allowed for your plan`,
+      });
+    }
 
     res.status(201).json({
       success: true,
       data: camera,
     });
   } catch (error) {
+    if (error instanceof OnvifError) return sendOnvifError(res, error);
     next(error);
   }
 };
@@ -195,7 +221,7 @@ exports.updateCamera = async (req, res, next) => {
   }
 
   try {
-    let camera = await Camera.findById(req.params.id);
+    let camera = await Camera.findById(req.params.id).select('+onvif.passwordEnc');
 
     if (!camera || camera.isDeleted) {
       return res.status(404).json({
@@ -211,12 +237,17 @@ exports.updateCamera = async (req, res, next) => {
       });
     }
 
-    const { name, label, ipAddress, streamUrl, location, status, installationDate, metadata, cameraType, displayNumber, settings } = req.body;
+    const { name, label, ipAddress, streamUrl, location, status, installationDate, metadata, cameraType, displayNumber, settings, onvif } = req.body;
+    const wasOnvif = camera.cameraType === 'onvif';
+    const willBeOnvif = cameraType !== undefined ? cameraType === 'onvif' : wasOnvif;
 
     if (name !== undefined) camera.name = name;
     if (label !== undefined) camera.label = label;
-    if (ipAddress !== undefined) camera.ipAddress = ipAddress;
-    if (streamUrl !== undefined) camera.streamUrl = streamUrl;
+    // ONVIF address and stream come from the device; they are not edited directly.
+    if (!willBeOnvif) {
+      if (ipAddress !== undefined) camera.ipAddress = ipAddress;
+      if (streamUrl !== undefined) camera.streamUrl = streamUrl;
+    }
     if (location !== undefined) camera.location = location;
     if (status !== undefined) camera.status = status;
     if (installationDate !== undefined) camera.installationDate = new Date(installationDate);
@@ -232,6 +263,15 @@ exports.updateCamera = async (req, res, next) => {
       }
     }
 
+    if (willBeOnvif && (!wasOnvif || onvifConnectionChanged(camera, onvif))) {
+      if (!wasOnvif && !onvif?.host) {
+        return res.status(400).json({ success: false, message: 'Camera IP address or host name is required for ONVIF cameras' });
+      }
+      await applyOnvifConnection(camera, onvif);
+    } else if (wasOnvif && !willBeOnvif) {
+      camera.onvif = undefined;
+    }
+
     await camera.save();
 
     res.status(200).json({
@@ -239,6 +279,7 @@ exports.updateCamera = async (req, res, next) => {
       data: camera,
     });
   } catch (error) {
+    if (error instanceof OnvifError) return sendOnvifError(res, error);
     next(error);
   }
 };
@@ -291,6 +332,13 @@ exports.updateCameraActivity = async (req, res, next) => {
       });
     }
 
+    if (req.user.role !== 'super_admin' && camera.organizationId.toString() !== req.user.organizationId?.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized',
+      });
+    }
+
     await camera.updateActivity();
 
     res.status(200).json({
@@ -307,9 +355,9 @@ exports.updateCameraActivity = async (req, res, next) => {
 // @access  Private (Org Admin)
 exports.assignOperatorsToCamera = async (req, res, next) => {
   try {
-    const { operatorIds, replace = true } = req.body;
+    const { operatorIds: rawOperatorIds, replace = true } = req.body;
 
-    if (!Array.isArray(operatorIds)) {
+    if (!Array.isArray(rawOperatorIds)) {
       return res.status(400).json({
         success: false,
         message: 'operatorIds array is required',
@@ -332,6 +380,26 @@ exports.assignOperatorsToCamera = async (req, res, next) => {
     }
 
     const organizationId = camera.organizationId;
+    const operatorIds = [...new Set(rawOperatorIds.map(String))];
+
+    // Validate before touching existing assignments so a rejected request changes nothing.
+    if (operatorIds.length > 0) {
+      const operators = await User.find({
+        _id: { $in: operatorIds },
+        role: 'operator',
+        organizationId,
+        isDeleted: false,
+      });
+
+      if (operators.length !== operatorIds.length) {
+        return res.status(400).json({
+          success: false,
+          message: 'One or more operators not found or do not belong to the organization',
+        });
+      }
+    }
+
+    invalidateCameraAudience(camera._id);
 
     if (replace) {
       await OperatorCameraAssignment.deleteMany({ cameraId: camera._id });
@@ -342,20 +410,6 @@ exports.assignOperatorsToCamera = async (req, res, next) => {
         success: true,
         data: [],
         message: 'All operator assignments removed for this camera',
-      });
-    }
-
-    const operators = await User.find({
-      _id: { $in: operatorIds },
-      role: 'operator',
-      organizationId,
-      isDeleted: false,
-    });
-
-    if (operators.length !== operatorIds.length) {
-      return res.status(400).json({
-        success: false,
-        message: 'One or more operators not found or do not belong to the organization',
       });
     }
 
@@ -473,6 +527,19 @@ exports.restoreCamera = async (req, res, next) => {
 
     await camera.restore();
 
+    // A parallel create/restore may have taken the last slot; undo this restore if now over the limit.
+    const afterRestore = await Camera.countDocuments({
+      organizationId: camera.organizationId,
+      isDeleted: false,
+    });
+    if (afterRestore > maxCameras) {
+      await camera.softDelete();
+      return res.status(400).json({
+        success: false,
+        message: `Cannot restore camera. Plan limit reached (${maxCameras} cameras). Remove another active camera first.`,
+      });
+    }
+
     res.status(200).json({
       success: true,
       data: camera,
@@ -518,6 +585,7 @@ exports.permanentDeleteCamera = async (req, res, next) => {
 
     await OperatorCameraAssignment.deleteMany({ cameraId });
     await Alert.deleteMany({ cameraId });
+    await FireIncident.deleteMany({ cameraId });
     await Camera.deleteOne({ _id: cameraId });
 
     res.status(200).json({

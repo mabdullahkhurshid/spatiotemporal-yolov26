@@ -1,7 +1,9 @@
 const Alert = require('../models/Alert');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
+const OperatorCameraAssignment = require('../models/OperatorCameraAssignment');
 const { sendAlertEmail } = require('./emailService');
+const { emitToCameraAudience } = require('../sockets/emitters');
 
 /**
  * Create alert, notifications, emails, and socket events.
@@ -60,9 +62,19 @@ async function createAlertFromDetection({
 
   await alert.populate('cameraId organizationId');
 
+  // Push to dashboards first so SMTP latency never delays the real-time alert.
+  if (io) {
+    const alertObj = alert.toObject();
+    const audience = { organizationId: camera.organizationId, cameraId: camera._id };
+    await emitToCameraAudience(io, audience, 'alert:new', { alert: alertObj });
+    await emitToCameraAudience(io, audience, `alert:${camera.organizationId}`, { type: 'new_alert', alert: alertObj });
+  }
+
+  // Org admins plus operators assigned to this camera (operators only see assigned cameras).
+  const assignedOperatorIds = await OperatorCameraAssignment.find({ cameraId: camera._id }).distinct('operatorId');
   const users = await User.find({
     organizationId: camera.organizationId,
-    role: { $in: ['org_admin', 'operator'] },
+    $or: [{ role: 'org_admin' }, { role: 'operator', _id: { $in: assignedOperatorIds } }],
     isActive: true,
     isDeleted: false,
   });
@@ -81,19 +93,12 @@ async function createAlertFromDetection({
     await Notification.insertMany(notifications);
   }
 
+  // Emails are best-effort and must not block the HTTP response / inference worker.
   const admins = users.filter((u) => u.role === 'org_admin');
   for (const admin of admins) {
-    try {
-      await sendAlertEmail(admin, alert, camera);
-    } catch (emailError) {
+    sendAlertEmail(admin, alert, camera).catch((emailError) => {
       console.error('Email send error:', emailError);
-    }
-  }
-
-  if (io) {
-    const alertObj = alert.toObject();
-    io.to(`org:${camera.organizationId}`).emit('alert:new', { alert: alertObj });
-    io.emit(`alert:${camera.organizationId}`, { type: 'new_alert', alert: alertObj });
+    });
   }
 
   return alert;

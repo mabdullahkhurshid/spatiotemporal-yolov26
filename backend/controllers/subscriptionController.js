@@ -3,7 +3,7 @@ const SubscriptionPlan = require('../models/SubscriptionPlan');
 const Organization = require('../models/Organization');
 const Order = require('../models/Order');
 const User = require('../models/User');
-const { generateToken, generateRefreshToken } = require('../utils/generateToken');
+const { generateToken } = require('../utils/generateToken');
 const {
   isSubscriptionTermActive,
   getOrganizationUsageCounts,
@@ -192,6 +192,7 @@ exports.checkoutSubscription = async (req, res, next) => {
     await Order.create({
       organizationId: organization._id,
       subscriptionPlan: legacyPlanKey,
+      planName: plan.name,
       amount: plan.price,
       status: 'approved',
       notes: 'Manual payment simulation for subscription checkout',
@@ -208,28 +209,15 @@ exports.checkoutSubscription = async (req, res, next) => {
     organization.status = 'ACTIVE';
     await organization.save();
 
+    // The existing refresh session stays valid (tokens carry only the user id); just issue a fresh access token.
     const updatedUser = await User.findById(user._id);
     const accessToken = generateToken(updatedUser._id);
-    const refreshToken = generateRefreshToken(updatedUser._id);
-
-    updatedUser.refreshToken = refreshToken;
-    await updatedUser.save({ validateBeforeSave: false });
-
-    const cookieOptions = {
-      expires: new Date(Date.now() + (process.env.JWT_COOKIE_EXPIRE || 7) * 24 * 60 * 60 * 1000),
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-    };
 
     res
       .status(200)
-      .cookie('accessToken', accessToken, cookieOptions)
-      .cookie('refreshToken', refreshToken, cookieOptions)
       .json({
         success: true,
         accessToken,
-        refreshToken,
         user: {
           id: updatedUser._id,
           _id: updatedUser._id,

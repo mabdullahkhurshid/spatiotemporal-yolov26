@@ -28,6 +28,7 @@ class CameraWorker:
             min_consecutive=settings.min_consecutive,
             alert_cooldown_ms=settings.alert_cooldown_ms,
             incident_end_silence_ms=settings.incident_end_silence_ms,
+            incident_min_consecutive=settings.incident_min_consecutive,
         )
         self.reader = StreamReader(camera.get("streamUrl", ""), camera.get("cameraType", "ip_rtsp"))
 

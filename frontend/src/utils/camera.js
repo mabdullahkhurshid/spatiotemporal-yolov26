@@ -8,3 +8,6 @@ export const findCameraById = (cameras, id) => {
   const target = normalizeCameraId(id);
   return cameras.find((camera) => normalizeCameraId(camera._id) === target) ?? null;
 };
+
+export const cameraTitle = (camera) =>
+  (camera && typeof camera === 'object' && (camera.name || camera.label || camera.displayNumber)) || 'Unnamed camera';

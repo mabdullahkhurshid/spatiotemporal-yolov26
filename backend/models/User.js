@@ -1,6 +1,21 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
+const refreshSessionSchema = new mongoose.Schema(
+  {
+    tokenHash: { type: String, required: true },
+    // Previous token stays valid briefly so parallel refreshes (e.g. two tabs) don't log the user out.
+    prevTokenHash: { type: String },
+    rotatedAt: { type: Date },
+    createdAt: { type: Date, default: Date.now },
+    lastUsedAt: { type: Date, default: Date.now },
+    expiresAt: { type: Date, required: true },
+    userAgent: { type: String },
+    ip: { type: String },
+  },
+  { _id: true }
+);
+
 const userSchema = new mongoose.Schema(
   {
     name: {
@@ -55,20 +70,45 @@ const userSchema = new mongoose.Schema(
     verifiedAt: {
       type: Date,
     },
+    // Secrets are stored as SHA-256 hashes and never returned by default queries.
     emailVerificationToken: {
       type: String,
+      select: false,
     },
     emailVerificationExpires: {
       type: Date,
     },
+    emailVerificationAttempts: {
+      type: Number,
+      default: 0,
+      select: false,
+    },
     passwordResetToken: {
       type: String,
+      select: false,
     },
     passwordResetExpires: {
       type: Date,
     },
+    // Legacy single refresh token (pre multi-session); migrated into refreshSessions on next refresh.
     refreshToken: {
       type: String,
+      select: false,
+    },
+    // One entry per signed-in device/browser.
+    refreshSessions: {
+      type: [refreshSessionSchema],
+      default: [],
+      select: false,
+    },
+    // One-time Google sign-in code exchanged by the SPA for a session.
+    oauthLoginCodeHash: {
+      type: String,
+      select: false,
+    },
+    oauthLoginCodeExpires: {
+      type: Date,
+      select: false,
     },
     lastLogin: {
       type: Date,

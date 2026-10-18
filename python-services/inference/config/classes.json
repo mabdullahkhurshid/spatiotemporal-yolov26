@@ -1,5 +1,5 @@
 {
-  "names": ["fire", "smoke", "other"],
+  "names": ["fire", "other", "smoke"],
   "inputSize": 960,
   "modelFormat": "onnx"
 }

@@ -1,29 +1,56 @@
 import { useEffect, useState } from 'react';
-import { Trash2, X } from 'lucide-react';
+import { useDispatch } from 'react-redux';
+import { RefreshCw, Save, Trash2, UserCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getUsers, getOperatorAssignments, assignOperatorsToCamera } from '../../services/apiEndpoints';
-import { normalizeCameraId } from '../../utils/camera';
+import { getUsers, getOperatorAssignments, assignOperatorsToCamera, refreshOnvifCamera } from '../../services/apiEndpoints';
+import { cameraReplaced } from '../../store/slices/cameraSlice';
+import { formatRelative } from '../../utils/format';
+import { cameraTitle, normalizeCameraId } from '../../utils/camera';
+import { Drawer } from '../ui/Dialog';
+import Button from '../ui/Button';
+import { Field, Input, Switch, Textarea } from '../ui/Field';
+import { useConfirm } from '../ui/confirmContext';
 import CameraOperatorPicker from './CameraOperatorPicker';
+import OnvifConnectFields from './OnvifConnectFields';
+import { emptyOnvifValue } from '../../utils/onvif';
 
-const CameraSettingsDrawer = ({
-  camera,
-  open,
-  onClose,
-  onSave,
-  onDelete,
-  saving = false,
-  deleting = false,
-}) => {
+const TYPE_LABEL = { ip_rtsp: 'IP / RTSP', http_mjpeg: 'HTTP MJPEG', onvif: 'ONVIF' };
+
+const Section = ({ title, description, children, action }) => (
+  <section className="space-y-4">
+    <div className="flex items-start justify-between gap-3">
+      <div>
+        <h3 className="text-sm font-semibold text-fg">{title}</h3>
+        {description && <p className="mt-0.5 text-xs text-fg-muted">{description}</p>}
+      </div>
+      {action}
+    </div>
+    {children}
+  </section>
+);
+
+const CameraSettingsDrawer = ({ camera, open, onClose, onSave, onDelete, saving = false, deleting = false }) => {
+  const confirm = useConfirm();
+  const dispatch = useDispatch();
   const [form, setForm] = useState(null);
+  const [onvif, setOnvif] = useState(emptyOnvifValue);
+  const [onvifConnection, setOnvifConnection] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [operators, setOperators] = useState([]);
   const [selectedOperatorIds, setSelectedOperatorIds] = useState([]);
   const [operatorsLoading, setOperatorsLoading] = useState(false);
   const [assignSaving, setAssignSaving] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     if (!open || !camera) return;
-
+    setOnvif({
+      host: camera.onvif?.host || '',
+      port: String(camera.onvif?.port || 80),
+      username: camera.onvif?.username || '',
+      password: '',
+      profileToken: camera.onvif?.profileToken || '',
+    });
+    setOnvifConnection(null);
     setForm({
       name: camera.name || '',
       label: camera.label || camera.name || '',
@@ -42,73 +69,60 @@ const CameraSettingsDrawer = ({
         notes: camera.settings?.notes || '',
       },
     });
-    setConfirmDelete(false);
 
     const loadOperators = async () => {
       setOperatorsLoading(true);
       try {
-        const [usersRes, assignmentsRes] = await Promise.all([
-          getUsers(),
-          getOperatorAssignments({}),
-        ]);
-        const orgOperators = usersRes.data.data.filter((u) => u.role === 'operator');
-        setOperators(orgOperators);
-
+        const [usersRes, assignmentsRes] = await Promise.all([getUsers(), getOperatorAssignments({})]);
+        setOperators(usersRes.data.data.filter((u) => u.role === 'operator'));
         const cameraIdStr = normalizeCameraId(camera._id);
-        const assigned = assignmentsRes.data.data
-          .filter((a) => normalizeCameraId(a.cameraId?._id ?? a.cameraId) === cameraIdStr)
-          .map((a) => normalizeCameraId(a.operatorId?._id ?? a.operatorId));
-        setSelectedOperatorIds(assigned);
+        setSelectedOperatorIds(
+          assignmentsRes.data.data
+            .filter((a) => normalizeCameraId(a.cameraId?._id ?? a.cameraId) === cameraIdStr)
+            .map((a) => normalizeCameraId(a.operatorId?._id ?? a.operatorId))
+        );
       } catch {
         toast.error('Failed to load operators');
       } finally {
         setOperatorsLoading(false);
       }
     };
-
     loadOperators();
   }, [open, camera]);
 
-  useEffect(() => {
-    if (!open) return;
-
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape') onClose?.();
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [open, onClose]);
-
   if (!open || !camera || !form) return null;
 
-  const handleChange = (field, value) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
-  };
+  const set = (field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }));
+  const setMeta = (field) => (e) => setForm((prev) => ({ ...prev, metadata: { ...prev.metadata, [field]: e.target.value } }));
+  const setSetting = (field, value) => setForm((prev) => ({ ...prev, settings: { ...prev.settings, [field]: value } }));
 
-  const handleMetadataChange = (field, value) => {
-    setForm((prev) => ({
-      ...prev,
-      metadata: { ...prev.metadata, [field]: value },
-    }));
-  };
-
-  const handleSettingsChange = (field, value) => {
-    setForm((prev) => ({
-      ...prev,
-      settings: { ...prev.settings, [field]: value },
-    }));
-  };
+  const isOnvif = form.cameraType === 'onvif';
+  const ipRequired = form.cameraType === 'ip_rtsp';
+  const streamRequired = form.cameraType === 'http_mjpeg';
 
   const handleSave = async (event) => {
     event.preventDefault();
-    const payload = {
+    await onSave?.({
       name: form.name || form.label,
       label: form.label || form.name,
       cameraType: form.cameraType,
       displayNumber: form.displayNumber.trim() || undefined,
       location: form.location.trim(),
-      ipAddress: form.ipAddress.trim() || undefined,
-      streamUrl: form.streamUrl.trim() || undefined,
+      // ONVIF address and stream come from the device; the server reconnects only if these changed.
+      ...(isOnvif
+        ? {
+            onvif: {
+              host: onvif.host.trim(),
+              port: onvif.port ? Number(onvif.port) : 80,
+              username: onvif.username.trim(),
+              password: onvif.password,
+              profileToken: onvif.profileToken || undefined,
+            },
+          }
+        : {
+            ipAddress: form.ipAddress.trim() || undefined,
+            streamUrl: form.streamUrl.trim() || undefined,
+          }),
       metadata: {
         model: form.metadata.model.trim() || undefined,
         resolution: form.metadata.resolution.trim() || undefined,
@@ -118,8 +132,20 @@ const CameraSettingsDrawer = ({
         detectionEnabled: form.settings.detectionEnabled,
         notes: form.settings.notes.trim() || undefined,
       },
-    };
-    await onSave?.(payload);
+    });
+  };
+
+  const handleRefreshOnvif = async () => {
+    setRefreshing(true);
+    try {
+      const { data } = await refreshOnvifCamera(camera._id);
+      dispatch(cameraReplaced(data.data));
+      toast.success('Stream address refreshed from the camera');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Could not refresh from the camera');
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const handleSaveOperators = async () => {
@@ -134,218 +160,146 @@ const CameraSettingsDrawer = ({
     }
   };
 
-  const handleDelete = () => {
-    if (!confirmDelete) {
-      setConfirmDelete(true);
-      return;
-    }
-    onDelete?.();
+  const handleDelete = async () => {
+    const ok = await confirm({
+      title: `Delete ${cameraTitle(camera)}?`,
+      description: 'The camera stops being monitored and operator access is removed. It moves to the deleted cameras list, where it can be restored.',
+      confirmLabel: 'Delete camera',
+      tone: 'danger',
+    });
+    if (ok) onDelete?.();
   };
 
-  const cameraTypeLabel =
-    form.cameraType === 'http_mjpeg'
-      ? 'HTTP MJPEG'
-      : form.cameraType === 'onvif'
-        ? 'ONVIF'
-        : 'IP / RTSP';
-  const ipRequired = form.cameraType === 'ip_rtsp' || form.cameraType === 'onvif';
-  const streamRequired = form.cameraType === 'http_mjpeg';
-
   return (
-    <div className="fixed inset-0 z-[70] flex justify-end bg-black/50" onClick={onClose}>
-      <div
-        className="w-full max-w-md h-full bg-white dark:bg-gray-800 shadow-xl overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between z-10">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Camera settings</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
-              {form.displayNumber || form.name}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500"
-            aria-label="Close"
+    <Drawer
+      open={open}
+      onClose={onClose}
+      title="Camera settings"
+      description={`${cameraTitle(camera)}${camera.displayNumber ? ` · ${camera.displayNumber}` : ''}`}
+      width="max-w-lg"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Close
+          </Button>
+          <Button type="submit" form="camera-settings-form" icon={Save} loading={saving}>
+            Save changes
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-8">
+        <form id="camera-settings-form" onSubmit={handleSave} className="space-y-8">
+          <Section title="Identity">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Camera name" required>
+                <Input value={form.name} onChange={set('name')} />
+              </Field>
+              <Field label="Display number">
+                <Input value={form.displayNumber} onChange={set('displayNumber')} />
+              </Field>
+            </div>
+            <Field label="Location" required>
+              <Input value={form.location} onChange={set('location')} />
+            </Field>
+          </Section>
+
+          <Section
+            title="Connection"
+            description={`Connection type: ${TYPE_LABEL[form.cameraType] || form.cameraType}`}
+            action={
+              isOnvif && (
+                <Button size="sm" variant="secondary" icon={RefreshCw} loading={refreshing} onClick={handleRefreshOnvif}>
+                  Refresh from camera
+                </Button>
+              )
+            }
           >
-            <X size={20} />
-          </button>
-        </div>
+            {isOnvif ? (
+              <>
+                <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 rounded-md bg-surface-2 p-3 text-sm">
+                  <dt className="text-fg-muted">Device</dt>
+                  <dd className="min-w-0 truncate text-fg">
+                    {[camera.onvif?.deviceInfo?.manufacturer, camera.onvif?.deviceInfo?.model].filter(Boolean).join(' ') || '—'}
+                    {camera.onvif?.deviceInfo?.firmwareVersion && <span className="text-fg-muted"> · firmware {camera.onvif.deviceInfo.firmwareVersion}</span>}
+                  </dd>
+                  <dt className="text-fg-muted">Profile</dt>
+                  <dd className="min-w-0 truncate text-fg">{camera.onvif?.profileName || '—'}</dd>
+                  <dt className="text-fg-muted">Stream</dt>
+                  <dd className="min-w-0 truncate font-mono text-xs leading-5 text-fg">{camera.streamUrl || '—'}</dd>
+                  <dt className="text-fg-muted">Synced</dt>
+                  <dd className="text-fg">{camera.onvif?.lastSyncedAt ? formatRelative(camera.onvif.lastSyncedAt) : '—'}</dd>
+                </dl>
+                <OnvifConnectFields
+                  value={onvif}
+                  onChange={setOnvif}
+                  connection={onvifConnection}
+                  onConnection={setOnvifConnection}
+                  cameraId={camera._id}
+                  hasStoredPassword={Boolean(camera.onvif?.hasPassword)}
+                />
+                <p className="text-xs text-fg-subtle">Connect to switch the stream profile. Saving reconnects to the camera only when the address, login or profile changed.</p>
+              </>
+            ) : (
+              <>
+                <Field label="IP address" required={ipRequired} optional={!ipRequired}>
+                  <Input value={form.ipAddress} onChange={set('ipAddress')} inputMode="decimal" />
+                </Field>
+                <Field label="Stream URL" required={streamRequired} optional={!streamRequired}>
+                  <Input value={form.streamUrl} onChange={set('streamUrl')} />
+                </Field>
+              </>
+            )}
+          </Section>
 
-        <form onSubmit={handleSave} className="p-6 space-y-6">
-          <section className="space-y-3">
-            <h4 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
-              Identity
-            </h4>
-            <div>
-              <label className="block text-sm font-medium mb-1">Name</label>
-              <input
-                value={form.name}
-                onChange={(e) => handleChange('name', e.target.value)}
-                className="input-field"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Display number</label>
-              <input
-                value={form.displayNumber}
-                onChange={(e) => handleChange('displayNumber', e.target.value)}
-                className="input-field"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Location</label>
-              <input
-                value={form.location}
-                onChange={(e) => handleChange('location', e.target.value)}
-                className="input-field"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Camera type</label>
-              <input
-                value={cameraTypeLabel}
-                readOnly
-                className="input-field bg-gray-100 dark:bg-gray-700/50 text-gray-600 dark:text-gray-400"
-              />
-            </div>
-          </section>
-
-          <section className="space-y-3">
-            <h4 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
-              Connection
-            </h4>
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                IP address {ipRequired && <span className="text-red-500">*</span>}
-              </label>
-              <input
-                value={form.ipAddress}
-                onChange={(e) => handleChange('ipAddress', e.target.value)}
-                className="input-field"
-                required={ipRequired}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                Stream URL {streamRequired && <span className="text-red-500">*</span>}
-              </label>
-              <input
-                value={form.streamUrl}
-                onChange={(e) => handleChange('streamUrl', e.target.value)}
-                className="input-field"
-                required={streamRequired}
-              />
-            </div>
-          </section>
-
-          <section className="space-y-3">
-            <h4 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
-              Hardware
-            </h4>
-            <input
-              value={form.metadata.model}
-              onChange={(e) => handleMetadataChange('model', e.target.value)}
-              className="input-field"
-              placeholder="Model"
+          <Section title="Detection">
+            <Switch
+              label="AI fire & smoke detection"
+              description="When off, this camera's feed is not analysed and raises no alerts."
+              checked={form.settings.detectionEnabled}
+              onChange={(value) => setSetting('detectionEnabled', value)}
             />
-            <input
-              value={form.metadata.resolution}
-              onChange={(e) => handleMetadataChange('resolution', e.target.value)}
-              className="input-field"
-              placeholder="Resolution"
-            />
-            <input
-              type="number"
-              value={form.metadata.fps}
-              onChange={(e) => handleMetadataChange('fps', e.target.value)}
-              className="input-field"
-              placeholder="FPS"
-              min={1}
-            />
-          </section>
+            <Field label="Notes" optional>
+              <Textarea rows={3} value={form.settings.notes} onChange={(e) => setSetting('notes', e.target.value)} placeholder="e.g. Faces loading bay; glare in late afternoon" />
+            </Field>
+          </Section>
 
-          <section className="space-y-3">
-            <h4 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
-              Detection
-            </h4>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={form.settings.detectionEnabled}
-                onChange={(e) => handleSettingsChange('detectionEnabled', e.target.checked)}
-                className="rounded"
-              />
-              Enable AI fire/smoke detection
-            </label>
-            <textarea
-              value={form.settings.notes}
-              onChange={(e) => handleSettingsChange('notes', e.target.value)}
-              className="input-field min-h-[80px]"
-              placeholder="Notes (optional)"
-            />
-          </section>
-
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h4 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
-                Operator access
-              </h4>
-              <button
-                type="button"
-                onClick={handleSaveOperators}
-                disabled={assignSaving || operatorsLoading}
-                className="text-sm text-primary-600 dark:text-primary-400 hover:underline disabled:opacity-50"
-              >
-                {assignSaving ? 'Saving...' : 'Save access'}
-              </button>
+          <Section title="Hardware">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field label="Model">
+                <Input value={form.metadata.model} onChange={setMeta('model')} />
+              </Field>
+              <Field label="Resolution">
+                <Input value={form.metadata.resolution} onChange={setMeta('resolution')} />
+              </Field>
+              <Field label="Frame rate">
+                <Input type="number" min={1} value={form.metadata.fps} onChange={setMeta('fps')} />
+              </Field>
             </div>
-            <CameraOperatorPicker
-              operators={operators}
-              selectedOperatorIds={selectedOperatorIds}
-              onChange={setSelectedOperatorIds}
-              loading={operatorsLoading}
-            />
-          </section>
-
-          <div className="flex justify-end gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
-            <button type="button" onClick={onClose} className="btn-secondary">
-              Cancel
-            </button>
-            <button type="submit" disabled={saving} className="btn-primary disabled:opacity-50">
-              {saving ? 'Saving...' : 'Save settings'}
-            </button>
-          </div>
+          </Section>
         </form>
 
-        <div className="px-6 pb-6">
-          <section className="rounded-lg border border-red-200 dark:border-red-800 p-4 space-y-3">
-            <h4 className="text-sm font-semibold text-red-700 dark:text-red-400">Danger zone</h4>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Soft-delete moves this camera to trash and removes operator assignments.
-            </p>
-            {confirmDelete && (
-              <p className="text-sm text-red-600 dark:text-red-400">
-                Are you sure? This cannot be undone from the grid (restore from trash if needed).
-              </p>
-            )}
-            <button
-              type="button"
-              onClick={handleDelete}
-              disabled={deleting}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 text-sm hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
-            >
-              <Trash2 size={16} />
-              {deleting ? 'Deleting...' : confirmDelete ? 'Confirm delete' : 'Delete camera'}
-            </button>
-          </section>
-        </div>
+        <Section
+          title="Operator access"
+          description="Operators only see and respond to cameras assigned to them."
+          action={
+            <Button size="sm" variant="secondary" icon={UserCheck} loading={assignSaving} disabled={operatorsLoading} onClick={handleSaveOperators}>
+              Save access
+            </Button>
+          }
+        >
+          <CameraOperatorPicker operators={operators} selectedOperatorIds={selectedOperatorIds} onChange={setSelectedOperatorIds} loading={operatorsLoading} />
+        </Section>
+
+        <section className="rounded-lg border border-critical-line p-4">
+          <h3 className="text-sm font-semibold text-critical-fg">Delete camera</h3>
+          <p className="mt-1 text-sm text-fg-muted">Stops monitoring and removes operator access. You can restore it later.</p>
+          <Button variant="danger" size="sm" icon={Trash2} loading={deleting} onClick={handleDelete} className="mt-3">
+            Delete camera
+          </Button>
+        </section>
       </div>
-    </div>
+    </Drawer>
   );
 };
 

@@ -1,13 +1,21 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { getOrders, getOrder, getOrderStats, updateOrder, deleteOrder } from '../../services/apiEndpoints';
-import {
-  formatAccountDate,
-  formatAccountCurrency,
-  accountStatusBadgeClass,
-} from '../../utils/accountFormatting';
-import { Eye, RefreshCw, X, ShoppingCart, Building2, Pencil, Trash2 } from 'lucide-react';
+import { Eye, MoreHorizontal, Pencil, Receipt, RefreshCw, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { getOrders, getOrder, getOrderStats, updateOrder, deleteOrder } from '../../services/apiEndpoints';
+import PageHeader from '../../components/ui/PageHeader';
+import Button from '../../components/ui/Button';
+import IconButton from '../../components/ui/IconButton';
+import Card from '../../components/ui/Card';
+import Menu from '../../components/ui/Menu';
+import Dialog, { Drawer } from '../../components/ui/Dialog';
+import DataTable from '../../components/ui/DataTable';
+import { StatGroup } from '../../components/ui/Stat';
+import { StatusBadge } from '../../components/ui/Badge';
+import { EmptyState, Skeleton } from '../../components/ui/Feedback';
+import { Field, Input, SearchInput, Select, Textarea } from '../../components/ui/Field';
+import { useConfirm } from '../../components/ui/confirmContext';
+import { formatCurrency, formatDate, formatDateTime } from '../../utils/format';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All statuses' },
@@ -30,13 +38,6 @@ const DATE_PRESETS = [
   { value: '30', label: 'Last 30 days' },
   { value: '90', label: 'Last 90 days' },
 ];
-
-const ORG_STATUS_COLORS = {
-  ACTIVE: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
-  PENDING: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
-  REJECTED: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
-  SUSPENDED: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
-};
 
 function formatOrderId(id) {
   if (!id) return '—';
@@ -100,7 +101,15 @@ function getCachedOrdersPage(statusFilter, planFilter, datePreset, page) {
 
 const TABLE_SKELETON_ROWS = 5;
 
+const DetailRow = ({ label, children }) => (
+  <div className="grid grid-cols-[8rem_1fr] gap-3 py-2 text-sm">
+    <dt className="text-fg-muted">{label}</dt>
+    <dd className="min-w-0 break-words text-fg">{children}</dd>
+  </div>
+);
+
 const SuperAdminOrders = () => {
+  const confirm = useConfirm();
   const initialCache = getCachedOrdersPage('', '', '', 1);
   const [orders, setOrders] = useState(() => initialCache?.orders ?? []);
   const [loading, setLoading] = useState(() => !initialCache);
@@ -178,7 +187,7 @@ const SuperAdminOrders = () => {
     const cacheKey = buildOrdersCacheKey(statusFilter, planFilter, datePreset, page);
     const hasCachedData = ordersPageCache.cacheKey === cacheKey;
     loadOrdersPage({ showLoading: !hasCachedData });
-  }, [loadOrdersPage]);
+  }, [loadOrdersPage, statusFilter, planFilter, datePreset, page]);
 
   const handleFilterChange = (setter) => (event) => {
     setter(event.target.value);
@@ -239,7 +248,13 @@ const SuperAdminOrders = () => {
   const handleDeleteOrder = async (order, event) => {
     event?.stopPropagation();
     const label = formatOrderId(order._id);
-    if (!window.confirm(`Delete order ${label}? This cannot be undone.`)) return;
+    const ok = await confirm({
+      title: `Delete order ${label}?`,
+      description: "The purchase record is removed permanently. The organization's subscription is not changed.",
+      confirmLabel: 'Delete order',
+      tone: 'danger',
+    });
+    if (!ok) return;
 
     try {
       await deleteOrder(order._id);
@@ -285,603 +300,247 @@ const SuperAdminOrders = () => {
 
   const detailOrder = detailDrawer.order;
   const detailOrg = detailOrder?.organizationId;
+  const busy = loading && orders.length === 0;
+
+  const columns = [
+    {
+      key: 'order',
+      header: 'Order',
+      primary: true,
+      cell: (order) => (
+        <div className="min-w-0">
+          <p className="truncate font-medium text-fg">{resolveOrgName(order)}</p>
+          <p className="font-mono text-2xs text-fg-subtle">{formatOrderId(order._id)}</p>
+        </div>
+      ),
+    },
+    { key: 'plan', header: 'Plan', cell: (order) => <span className="text-sm">{resolvePlanLabel(order)}</span> },
+    { key: 'amount', header: 'Amount', align: 'right', cell: (order) => <span className="tabular text-sm font-medium">{formatCurrency(order.amount)}</span> },
+    { key: 'date', header: 'Date', hideBelow: 'lg', cell: (order) => <span className="whitespace-nowrap text-sm text-fg-muted">{formatDate(order.createdAt)}</span> },
+    { key: 'status', header: 'Status', cell: (order) => <StatusBadge kind="order" value={order.status} /> },
+    {
+      key: 'actions',
+      header: 'Actions',
+      align: 'right',
+      cell: (order) => (
+        <Menu
+          width="w-44"
+          items={[
+            { label: 'View details', icon: Eye, onClick: () => openOrderDetail(order) },
+            { label: 'Edit order', icon: Pencil, onClick: () => openEditModal(order) },
+            { divider: true },
+            { label: 'Delete order', icon: Trash2, tone: 'danger', onClick: () => handleDeleteOrder(order) },
+          ]}
+          trigger={(props) => <IconButton {...props} icon={MoreHorizontal} label={`Actions for order ${formatOrderId(order._id)}`} size="sm" />}
+        />
+      ),
+    },
+  ];
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap justify-between items-start gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Orders</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">
-            View and manage subscription purchase records across all organizations
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => loadOrdersPage({ showLoading: false })}
-          className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"
-          aria-label="Refresh orders"
-        >
-          <RefreshCw size={18} />
-        </button>
-      </div>
+      <PageHeader
+        title="Orders"
+        description="Subscription purchases and renewals across all organizations."
+        actions={
+          <Button variant="secondary" icon={RefreshCw} loading={refreshing} onClick={() => loadOrdersPage({ showLoading: false })}>
+            Refresh
+          </Button>
+        }
+        className="mb-0"
+      />
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {[
+      <StatGroup
+        className="lg:grid-cols-3"
+        loading={busy}
+        items={[
           { label: 'Total orders', value: orderStats.total },
           { label: 'Approved', value: orderStats.approved },
           { label: 'This month', value: orderStats.thisMonth },
-        ].map((item) => (
-          <div key={item.label} className="card py-4">
-            <p className="text-sm text-gray-600 dark:text-gray-400">{item.label}</p>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1 min-h-[2rem]">
-              {loading && orders.length === 0 ? (
-                <span className="inline-block h-8 w-16 rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
-              ) : (
-                item.value
-              )}
-            </p>
-          </div>
-        ))}
-      </div>
+        ]}
+      />
 
-      <div className="card">
-        <div className="flex flex-wrap items-center gap-3 mb-6">
-          <select
-            value={statusFilter}
-            onChange={handleFilterChange(setStatusFilter)}
-            className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-          >
+      <Card>
+        <div className="grid gap-2 border-b border-line px-4 py-3 sm:grid-cols-2 sm:px-5 lg:grid-cols-[minmax(0,1fr)_11rem_11rem_11rem]">
+          <SearchInput value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search by organization" label="Search orders" />
+          <Select value={statusFilter} onChange={handleFilterChange(setStatusFilter)} aria-label="Status">
             {STATUS_OPTIONS.map((opt) => (
-              <option key={opt.value || 'all'} value={opt.value}>
+              <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>
             ))}
-          </select>
-
-          <select
-            value={planFilter}
-            onChange={handleFilterChange(setPlanFilter)}
-            className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-          >
+          </Select>
+          <Select value={planFilter} onChange={handleFilterChange(setPlanFilter)} aria-label="Plan tier">
             {PLAN_OPTIONS.map((opt) => (
-              <option key={opt.value || 'all'} value={opt.value}>
-                {opt.label}
+              <option key={opt.value} value={opt.value}>
+                {opt.value ? `Tier: ${opt.label}` : 'All tiers'}
               </option>
             ))}
-          </select>
-
-          <select
-            value={datePreset}
-            onChange={handleFilterChange(setDatePreset)}
-            className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-          >
+          </Select>
+          <Select value={datePreset} onChange={handleFilterChange(setDatePreset)} aria-label="Date range">
             {DATE_PRESETS.map((opt) => (
-              <option key={opt.value || 'all'} value={opt.value}>
+              <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>
             ))}
-          </select>
-
-          <input
-            type="search"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by organization..."
-            className="flex-1 min-w-[200px] rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-          />
-          {refreshing && (
-            <RefreshCw size={16} className="text-gray-400 animate-spin shrink-0" aria-hidden="true" />
-          )}
+          </Select>
         </div>
 
-        <div className={`min-h-[320px] transition-opacity ${refreshing ? 'opacity-60' : ''}`}>
-          {!loading && filteredOrders.length === 0 ? (
-            <div className="text-center py-12">
-              <ShoppingCart className="mx-auto text-gray-400 mb-4" size={40} />
-              <p className="text-gray-600 dark:text-gray-400">
-                {orders.length === 0
-                  ? 'No orders yet. Orders are created automatically when customers complete checkout.'
-                  : 'No orders match your filters.'}
-              </p>
+        <DataTable
+          caption="Orders"
+          columns={columns}
+          rows={filteredOrders}
+          loading={busy}
+          skeletonRows={TABLE_SKELETON_ROWS}
+          onRowClick={openOrderDetail}
+          empty={<EmptyState icon={Receipt} title="No orders found" description={searchQuery || statusFilter || planFilter || datePreset ? 'Try different filters.' : 'Orders appear when customers purchase or renew a plan.'} />}
+        />
+
+        {totalPages > 1 && (
+          <nav aria-label="Pagination" className="flex items-center justify-between gap-3 border-t border-line px-4 py-3 sm:px-5">
+            <p className="tabular text-sm text-fg-muted">
+              Page <span className="font-medium text-fg">{page}</span> of <span className="font-medium text-fg">{totalPages}</span> · {totalCount} orders
+            </p>
+            <div className="flex gap-2">
+              <Button size="sm" variant="secondary" disabled={page <= 1 || loading} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+                Previous
+              </Button>
+              <Button size="sm" variant="secondary" disabled={page >= totalPages || loading} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
+                Next
+              </Button>
             </div>
-          ) : (
+          </nav>
+        )}
+      </Card>
+
+      <Drawer
+        open={detailDrawer.open}
+        onClose={closeDetailDrawer}
+        title={detailOrder ? `Order ${formatOrderId(detailOrder._id)}` : 'Order'}
+        description={detailOrder && <StatusBadge kind="order" value={detailOrder.status} />}
+        footer={
+          detailOrder && (
             <>
-              <div className={`md:hidden divide-y divide-gray-200 dark:divide-gray-700 ${refreshing ? 'pointer-events-none' : ''}`}>
-                {loading
-                  ? Array.from({ length: 3 }, (_, row) => (
-                      <div key={`mobile-skeleton-${row}`} className="py-4 space-y-3">
-                        <div className="h-4 w-24 rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
-                        <div className="h-4 w-full rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
-                        <div className="h-4 w-2/3 rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
-                      </div>
-                    ))
-                  : filteredOrders.map((order) => (
-                      <div
-                        key={order._id}
-                        className="py-4 space-y-3 cursor-pointer"
-                        onClick={() => openOrderDetail(order)}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <p className="text-sm font-mono font-medium text-gray-700 dark:text-gray-300">
-                            {formatOrderId(order._id)}
-                          </p>
-                          <span
-                            className={`px-2 py-1 rounded text-xs capitalize shrink-0 ${accountStatusBadgeClass(order.status)}`}
-                          >
-                            {order.status}
-                          </span>
-                        </div>
-                        <dl className="space-y-2 text-sm">
-                          <div className="flex items-center justify-between gap-3">
-                            <dt className="text-gray-600 dark:text-gray-400 shrink-0">Date</dt>
-                            <dd className="whitespace-nowrap text-right">{formatAccountDate(order.createdAt)}</dd>
-                          </div>
-                          <div className="flex items-center justify-between gap-3">
-                            <dt className="text-gray-600 dark:text-gray-400 shrink-0">Organization</dt>
-                            <dd className="font-medium text-right break-words">
-                              {resolveOrgName(order)}
-                              {order.organizationId?.isDeleted && (
-                                <span className="ml-2 text-xs text-red-600 dark:text-red-400">(deleted)</span>
-                              )}
-                            </dd>
-                          </div>
-                          <div className="flex items-center justify-between gap-3">
-                            <dt className="text-gray-600 dark:text-gray-400 shrink-0">Plan</dt>
-                            <dd className="text-right">{resolvePlanLabel(order)}</dd>
-                          </div>
-                          <div className="flex items-center justify-between gap-3">
-                            <dt className="text-gray-600 dark:text-gray-400 shrink-0">Amount</dt>
-                            <dd className="whitespace-nowrap text-right">{formatAccountCurrency(order.amount)}</dd>
-                          </div>
-                        </dl>
-                        <div className="flex flex-wrap gap-1" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            type="button"
-                            onClick={() => openOrderDetail(order)}
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20"
-                          >
-                            <Eye size={16} /> View
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => openEditModal(order, e)}
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                          >
-                            <Pencil size={16} /> Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => handleDeleteOrder(order, e)}
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
-                          >
-                            <Trash2 size={16} /> Delete
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-              </div>
-
-              <div className={`hidden md:block overflow-x-auto ${refreshing ? 'pointer-events-none' : ''}`}>
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-gray-200 dark:border-gray-700">
-                      <th className="text-left py-3 px-4 text-sm font-medium text-gray-600 dark:text-gray-400">
-                        Order
-                      </th>
-                      <th className="text-left py-3 px-4 text-sm font-medium text-gray-600 dark:text-gray-400">
-                        Date
-                      </th>
-                      <th className="text-left py-3 px-4 text-sm font-medium text-gray-600 dark:text-gray-400">
-                        Organization
-                      </th>
-                      <th className="text-left py-3 px-4 text-sm font-medium text-gray-600 dark:text-gray-400">
-                        Plan
-                      </th>
-                      <th className="text-left py-3 px-4 text-sm font-medium text-gray-600 dark:text-gray-400">
-                        Amount
-                      </th>
-                      <th className="text-left py-3 px-4 text-sm font-medium text-gray-600 dark:text-gray-400">
-                        Status
-                      </th>
-                      <th className="text-right py-3 px-4 text-sm font-medium text-gray-600 dark:text-gray-400">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {loading
-                      ? Array.from({ length: TABLE_SKELETON_ROWS }, (_, row) => (
-                          <tr key={`skeleton-${row}`} className="border-b border-gray-100 dark:border-gray-800">
-                            {Array.from({ length: 7 }, (_, col) => (
-                              <td key={col} className="py-3 px-4">
-                                <div className="h-4 rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
-                              </td>
-                            ))}
-                          </tr>
-                        ))
-                      : filteredOrders.map((order) => (
-                          <tr
-                            key={order._id}
-                            className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer"
-                            onClick={() => openOrderDetail(order)}
-                          >
-                            <td className="py-3 px-4 text-sm font-mono text-gray-700 dark:text-gray-300">
-                              {formatOrderId(order._id)}
-                            </td>
-                            <td className="py-3 px-4 text-sm whitespace-nowrap">{formatAccountDate(order.createdAt)}</td>
-                            <td className="py-3 px-4 text-sm">
-                              <span className="font-medium">{resolveOrgName(order)}</span>
-                              {order.organizationId?.isDeleted && (
-                                <span className="ml-2 text-xs text-red-600 dark:text-red-400">(deleted)</span>
-                              )}
-                            </td>
-                            <td className="py-3 px-4 text-sm">{resolvePlanLabel(order)}</td>
-                            <td className="py-3 px-4 text-sm">{formatAccountCurrency(order.amount)}</td>
-                            <td className="py-3 px-4">
-                              <span
-                                className={`px-2 py-1 rounded text-xs capitalize ${accountStatusBadgeClass(order.status)}`}
-                              >
-                                {order.status}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4 text-right">
-                              <div className="inline-flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openOrderDetail(order);
-                                  }}
-                                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20"
-                                >
-                                  <Eye size={16} /> View
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => openEditModal(order, e)}
-                                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                                >
-                                  <Pencil size={16} /> Edit
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => handleDeleteOrder(order, e)}
-                                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
-                                >
-                                  <Trash2 size={16} /> Delete
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {!loading && (
-                <div className="flex flex-wrap items-center justify-between gap-3 mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    {totalCount} order{totalCount !== 1 ? 's' : ''} total
-                    {searchQuery.trim() && filteredOrders.length !== orders.length
-                      ? ` · ${filteredOrders.length} shown after search`
-                      : ''}
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      disabled={page <= 1}
-                      onClick={() => setPage((p) => Math.max(1, p - 1))}
-                      className="px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-sm disabled:opacity-50"
-                    >
-                      Previous
-                    </button>
-                    <span className="text-sm text-gray-600 dark:text-gray-400">
-                      Page {page} of {totalPages}
-                    </span>
-                    <button
-                      type="button"
-                      disabled={page >= totalPages}
-                      onClick={() => setPage((p) => p + 1)}
-                      className="px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-sm disabled:opacity-50"
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
-              )}
+              <Button variant="danger-ghost" icon={Trash2} onClick={() => handleDeleteOrder(detailOrder)}>
+                Delete
+              </Button>
+              <Button variant="secondary" icon={Pencil} onClick={() => openEditModal(detailOrder)}>
+                Edit order
+              </Button>
             </>
-          )}
-        </div>
-      </div>
-
-      {detailDrawer.open && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={closeDetailDrawer}>
-          <div
-            className="w-full max-w-md h-full bg-white dark:bg-gray-800 shadow-xl overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Order details</h3>
-              <div className="flex items-center gap-2">
-                {detailOrder && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => openEditModal(detailOrder)}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                    >
-                      <Pencil size={16} /> Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteOrder(detailOrder)}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
-                    >
-                      <Trash2 size={16} /> Delete
-                    </button>
-                  </>
-                )}
-                <button
-                  type="button"
-                  onClick={closeDetailDrawer}
-                  className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500"
-                  aria-label="Close"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-            </div>
-
-            <div className="p-6 space-y-6">
-              {detailDrawer.loading ? (
-                <div className="text-center py-8 text-gray-500">Loading details...</div>
-              ) : detailOrder ? (
-                <>
-                  <div className="flex items-center gap-3">
-                    <div className="bg-blue-100 dark:bg-blue-900 p-3 rounded-lg">
-                      <ShoppingCart className="text-blue-600 dark:text-blue-400" size={24} />
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">Order</p>
-                      <p className="font-semibold text-lg font-mono">{formatOrderId(detailOrder._id)}</p>
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3 text-sm">
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500 dark:text-gray-400">Status</span>
-                      <span
-                        className={`px-2 py-1 rounded text-xs capitalize ${accountStatusBadgeClass(detailOrder.status)}`}
-                      >
-                        {detailOrder.status}
-                      </span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500 dark:text-gray-400">Plan</span>
-                      <span className="font-medium text-right">{resolvePlanLabel(detailOrder)}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500 dark:text-gray-400">Amount</span>
-                      <span className="font-medium">{formatAccountCurrency(detailOrder.amount)}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500 dark:text-gray-400">Created</span>
-                      <span>{formatAccountDate(detailOrder.createdAt)}</span>
-                    </div>
-                    {detailOrder.updatedAt && detailOrder.updatedAt !== detailOrder.createdAt && (
-                      <div className="flex justify-between gap-4">
-                        <span className="text-gray-500 dark:text-gray-400">Updated</span>
-                        <span>{formatAccountDate(detailOrder.updatedAt)}</span>
-                      </div>
-                    )}
-                    {detailOrder.approvedAt && (
-                      <div className="flex justify-between gap-4">
-                        <span className="text-gray-500 dark:text-gray-400">Approved at</span>
-                        <span>{formatAccountDate(detailOrder.approvedAt)}</span>
-                      </div>
-                    )}
-                    {detailOrder.approvedBy && (
-                      <div className="flex justify-between gap-4">
-                        <span className="text-gray-500 dark:text-gray-400">Approved by</span>
-                        <span className="text-right">
-                          {detailOrder.approvedBy.name || detailOrder.approvedBy.email || '—'}
-                        </span>
-                      </div>
-                    )}
-                    {detailOrder.paymentIntentId && (
-                      <div className="flex justify-between gap-4">
-                        <span className="text-gray-500 dark:text-gray-400">Payment ID</span>
-                        <span className="font-mono text-xs break-all text-right">{detailOrder.paymentIntentId}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {detailOrder.notes && (
-                    <div>
-                      <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Notes</p>
-                      <p className="text-sm text-gray-600 dark:text-gray-400 rounded-lg border border-gray-200 dark:border-gray-700 p-3 bg-gray-50 dark:bg-gray-900/40">
-                        {detailOrder.notes}
-                      </p>
-                    </div>
-                  )}
-
-                  {detailOrg && typeof detailOrg === 'object' && (
-                    <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Building2 size={18} className="text-gray-500" />
-                        <h4 className="font-semibold text-gray-900 dark:text-white">Organization</h4>
-                      </div>
-                      <div className="space-y-2 text-sm">
-                        <div>
-                          <p className="text-gray-500 dark:text-gray-400">Name</p>
-                          <p className="font-medium">{detailOrg.name || '—'}</p>
-                        </div>
-                        <div>
-                          <p className="text-gray-500 dark:text-gray-400">Email</p>
-                          <p className="font-medium break-all">{detailOrg.email || '—'}</p>
-                        </div>
-                        {detailOrg.status && (
-                          <div>
-                            <p className="text-gray-500 dark:text-gray-400">Org status</p>
-                            <span
-                              className={`inline-block px-2 py-1 rounded text-xs font-medium ${ORG_STATUS_COLORS[detailOrg.status] || 'bg-gray-100 text-gray-800'}`}
-                            >
-                              {detailOrg.status}
-                            </span>
-                          </div>
-                        )}
-                        {detailOrder.organizationAdmin && (
-                          <div>
-                            <p className="text-gray-500 dark:text-gray-400">Org admin</p>
-                            <p className="font-medium">{detailOrder.organizationAdmin.name || '—'}</p>
-                            <p className="text-gray-600 dark:text-gray-400">{detailOrder.organizationAdmin.email}</p>
-                          </div>
-                        )}
-                      </div>
-                      {detailOrg._id && (
-                        <Link
-                          to="/organizations"
-                          className="inline-flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 hover:underline mt-2"
-                        >
-                          View organizations
-                        </Link>
-                      )}
-                    </div>
-                  )}
-                </>
-              ) : null}
-            </div>
+          )
+        }
+      >
+        {detailDrawer.loading || !detailOrder ? (
+          <div className="space-y-3">
+            <Skeleton className="h-20" />
+            <Skeleton className="h-32" />
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="space-y-6">
+            <section>
+              <h3 className="eyebrow mb-1">Payment</h3>
+              <dl className="divide-y divide-line">
+                <DetailRow label="Plan">{resolvePlanLabel(detailOrder)}</DetailRow>
+                <DetailRow label="Amount">
+                  <span className="tabular font-medium">{formatCurrency(detailOrder.amount)}</span>
+                </DetailRow>
+                <DetailRow label="Created">{formatDateTime(detailOrder.createdAt)}</DetailRow>
+                {detailOrder.approvedAt && <DetailRow label="Approved">{formatDateTime(detailOrder.approvedAt)}</DetailRow>}
+                {detailOrder.approvedBy && <DetailRow label="Approved by">{detailOrder.approvedBy.name || detailOrder.approvedBy.email}</DetailRow>}
+                {detailOrder.paymentIntentId && (
+                  <DetailRow label="Payment ref.">
+                    <span className="font-mono text-xs">{detailOrder.paymentIntentId}</span>
+                  </DetailRow>
+                )}
+                {detailOrder.notes && <DetailRow label="Notes">{detailOrder.notes}</DetailRow>}
+              </dl>
+            </section>
 
-      {editModal.open && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
-          <div
-            className="w-full max-w-lg bg-white dark:bg-gray-800 rounded-xl shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-700 px-6 py-4">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Edit order</h3>
-              <button
-                type="button"
-                onClick={closeEditModal}
-                className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500"
-                aria-label="Close edit modal"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {!editModal.form ? (
-              <div className="px-6 py-10 text-center text-gray-500">Loading order...</div>
-            ) : (
-              <form onSubmit={handleSaveOrder} className="px-6 py-5 space-y-4">
-                <div className="rounded-lg bg-gray-50 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-700 px-4 py-3 text-sm">
-                  <p className="text-gray-500 dark:text-gray-400">Order</p>
-                  <p className="font-mono font-medium">{formatOrderId(editModal.order?._id)}</p>
-                  <p className="text-gray-600 dark:text-gray-400 mt-1">
-                    {resolveOrgName(editModal.order)}
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Status
-                  </label>
-                  <select
-                    value={editModal.form.status}
-                    onChange={handleEditFieldChange('status')}
-                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm"
-                  >
-                    {EDIT_STATUS_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Plan
-                  </label>
-                  <select
-                    value={editModal.form.subscriptionPlan}
-                    onChange={handleEditFieldChange('subscriptionPlan')}
-                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm"
-                  >
-                    {EDIT_PLAN_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Amount
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={editModal.form.amount}
-                    onChange={handleEditFieldChange('amount')}
-                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Payment ID
-                  </label>
-                  <input
-                    type="text"
-                    value={editModal.form.paymentIntentId}
-                    onChange={handleEditFieldChange('paymentIntentId')}
-                    placeholder="Optional payment reference"
-                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Notes
-                  </label>
-                  <textarea
-                    value={editModal.form.notes}
-                    onChange={handleEditFieldChange('notes')}
-                    rows={3}
-                    className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm"
-                    placeholder="Internal notes about this order"
-                  />
-                </div>
-
-                <div className="flex justify-end gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={closeEditModal}
-                    className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm"
-                    disabled={editModal.saving}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 rounded-lg bg-primary-600 text-white text-sm hover:bg-primary-700 disabled:opacity-50"
-                    disabled={editModal.saving}
-                  >
-                    {editModal.saving ? 'Saving...' : 'Save changes'}
-                  </button>
-                </div>
-              </form>
+            {detailOrg && typeof detailOrg === 'object' && (
+              <section>
+                <h3 className="eyebrow mb-1">Organization</h3>
+                <dl className="divide-y divide-line">
+                  <DetailRow label="Name">
+                    <Link to="/superadmin/organizations" className="link">
+                      {detailOrg.name || '—'}
+                    </Link>
+                  </DetailRow>
+                  <DetailRow label="Email">{detailOrg.email || '—'}</DetailRow>
+                  {detailOrg.status && (
+                    <DetailRow label="Status">
+                      <StatusBadge kind="org" value={detailOrg.status} />
+                    </DetailRow>
+                  )}
+                  {detailOrder.organizationAdmin && (
+                    <DetailRow label="Admin">
+                      {detailOrder.organizationAdmin.name}
+                      <span className="block text-xs text-fg-muted">{detailOrder.organizationAdmin.email}</span>
+                    </DetailRow>
+                  )}
+                </dl>
+              </section>
             )}
           </div>
-        </div>
-      )}
+        )}
+      </Drawer>
+
+      <Dialog
+        open={editModal.open}
+        onClose={closeEditModal}
+        title={editModal.order ? `Edit order ${formatOrderId(editModal.order._id)}` : 'Edit order'}
+        description="Manual corrections are recorded on the order."
+        footer={
+          <>
+            <Button variant="secondary" onClick={closeEditModal}>
+              Cancel
+            </Button>
+            <Button type="submit" form="order-form" loading={editModal.saving} disabled={!editModal.form}>
+              Save changes
+            </Button>
+          </>
+        }
+      >
+        {!editModal.form ? (
+          <div className="space-y-3">
+            <Skeleton className="h-9" />
+            <Skeleton className="h-9" />
+            <Skeleton className="h-20" />
+          </div>
+        ) : (
+          <form id="order-form" onSubmit={handleSaveOrder} className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Status">
+                <Select value={editModal.form.status} onChange={handleEditFieldChange('status')}>
+                  {EDIT_STATUS_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Plan tier">
+                <Select value={editModal.form.subscriptionPlan} onChange={handleEditFieldChange('subscriptionPlan')}>
+                  {EDIT_PLAN_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+            <Field label="Amount">
+              <Input type="number" min={0} step="0.01" value={editModal.form.amount} onChange={handleEditFieldChange('amount')} />
+            </Field>
+            <Field label="Payment reference" optional>
+              <Input value={editModal.form.paymentIntentId} onChange={handleEditFieldChange('paymentIntentId')} placeholder="Optional payment reference" />
+            </Field>
+            <Field label="Notes" optional>
+              <Textarea rows={3} value={editModal.form.notes} onChange={handleEditFieldChange('notes')} placeholder="Internal notes about this order" />
+            </Field>
+          </form>
+        )}
+      </Dialog>
     </div>
   );
 };

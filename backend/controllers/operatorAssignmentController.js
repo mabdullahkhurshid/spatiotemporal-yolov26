@@ -2,6 +2,7 @@ const OperatorCameraAssignment = require('../models/OperatorCameraAssignment');
 const User = require('../models/User');
 const Camera = require('../models/Camera');
 const Organization = require('../models/Organization');
+const { invalidateCameraAudience } = require('../sockets/emitters');
 
 // @desc    Get camera assignments for an operator (or all in org)
 // @route   GET /api/operator-assignments?operatorId= & organizationId=
@@ -41,9 +42,9 @@ exports.getAssignments = async (req, res, next) => {
 // @access  Private (Super Admin, Org Admin)
 exports.assignCameras = async (req, res, next) => {
   try {
-    const { operatorId, cameraIds, replace } = req.body;
+    const { operatorId, cameraIds: rawCameraIds, replace } = req.body;
 
-    if (!operatorId || !Array.isArray(cameraIds)) {
+    if (!operatorId || !Array.isArray(rawCameraIds)) {
       return res.status(400).json({
         success: false,
         message: 'operatorId and cameraIds array are required',
@@ -70,6 +71,25 @@ exports.assignCameras = async (req, res, next) => {
     }
 
     const organizationId = operator.organizationId;
+    const cameraIds = [...new Set(rawCameraIds.map(String))];
+
+    // Validate before touching existing assignments so a rejected request changes nothing.
+    if (cameraIds.length > 0) {
+      const cameras = await Camera.find({
+        _id: { $in: cameraIds },
+        organizationId,
+        isDeleted: false,
+      });
+
+      if (cameras.length !== cameraIds.length) {
+        return res.status(400).json({
+          success: false,
+          message: 'One or more cameras not found or do not belong to the operator organization',
+        });
+      }
+    }
+
+    invalidateCameraAudience();
 
     if (replace) {
       await OperatorCameraAssignment.deleteMany({ operatorId });
@@ -80,19 +100,6 @@ exports.assignCameras = async (req, res, next) => {
         success: true,
         data: [],
         message: replace ? 'All assignments removed' : 'No cameras to add',
-      });
-    }
-
-    const cameras = await Camera.find({
-      _id: { $in: cameraIds },
-      organizationId,
-      isDeleted: false,
-    });
-
-    if (cameras.length !== cameraIds.length) {
-      return res.status(400).json({
-        success: false,
-        message: 'One or more cameras not found or do not belong to the operator organization',
       });
     }
 
@@ -148,6 +155,7 @@ exports.removeAssignment = async (req, res, next) => {
     }
 
     await OperatorCameraAssignment.findByIdAndDelete(req.params.assignmentId);
+    invalidateCameraAudience(assignment.cameraId?._id || assignment.cameraId);
 
     res.status(200).json({
       success: true,

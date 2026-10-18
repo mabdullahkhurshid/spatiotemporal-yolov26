@@ -4,13 +4,14 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
-const rateLimit = require('express-rate-limit');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
 require('dotenv').config();
 
 const connectDB = require('./config/database');
 const errorHandler = require('./middleware/errorHandler');
+const { rejectMongoOperators } = require('./middleware/sanitize');
+const { apiLimiter } = require('./middleware/rateLimits');
 const handleSocketConnection = require('./sockets/socketHandlers');
 
 // Connect to database
@@ -44,18 +45,21 @@ app.use(
   })
 );
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
-  message: 'Too many requests from this IP, please try again later.',
-});
-app.use('/api/', limiter);
+// Behind nginx/a load balancer, trust the proxy so rate limits see the client IP, not the proxy's.
+// TRUST_PROXY: number of proxy hops (e.g. 1), "true", or an Express trust-proxy value.
+if (process.env.TRUST_PROXY) {
+  const value = process.env.TRUST_PROXY;
+  app.set('trust proxy', /^\d+$/.test(value) ? Number(value) : value === 'true' ? true : value);
+}
+
+// Rate limiting (per user when signed in, per IP otherwise; inference worker exempt)
+app.use('/api/', apiLimiter);
 
 // Body parser
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+app.use('/api/', rejectMongoOperators);
 
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 

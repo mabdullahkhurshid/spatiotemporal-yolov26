@@ -1,66 +1,46 @@
 import { Link } from 'react-router-dom';
 import { AlertTriangle, Ban, Clock } from 'lucide-react';
+import { Notice } from '../ui/Feedback';
+import Button from '../ui/Button';
+import { daysUntil, formatDate } from '../../utils/format';
 
-const AccountStatusBanner = ({ flags, organization, subscription }) => {
+/** Account-level warnings: suspended organization, expired or soon-expiring subscription. */
+const AccountStatusBanner = ({ flags, organization, subscription, className }) => {
   if (!flags?.hasOrganization) return null;
-
   const endDate = subscription?.endDate || organization?.subscriptionEndDate;
-  const expiryDate = endDate ? new Date(endDate) : null;
-  const daysUntilExpiry =
-    expiryDate && !Number.isNaN(expiryDate.getTime())
-      ? Math.ceil((expiryDate - Date.now()) / (1000 * 60 * 60 * 24))
-      : null;
+  const days = daysUntil(endDate);
 
   if (flags.isOrgSuspended) {
     return (
-      <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-4 flex gap-3">
-        <Ban className="text-red-600 dark:text-red-400 shrink-0 mt-0.5" size={20} />
-        <div>
-          <p className="font-semibold text-red-800 dark:text-red-200">Organization suspended</p>
-          <p className="text-sm text-red-700 dark:text-red-300 mt-1">
-            Your organization has been suspended. Contact support to restore access to the org
-            dashboard.
-          </p>
-        </div>
-      </div>
+      <Notice tone="critical" icon={Ban} title="Organization suspended" className={className}>
+        Monitoring is paused for your organization. Contact support to restore access.
+      </Notice>
     );
   }
 
   if (flags.isSubscriptionExpired) {
     return (
-      <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-4 flex gap-3">
-        <AlertTriangle className="text-red-600 dark:text-red-400 shrink-0 mt-0.5" size={20} />
-        <div>
-          <p className="font-semibold text-red-800 dark:text-red-200">Subscription expired</p>
-          <p className="text-sm text-red-700 dark:text-red-300 mt-1">
-            Your subscription ended on {expiryDate?.toLocaleDateString() || '—'}. Renew your plan
-            to restore full access.
-          </p>
-          <Link
-            to="/customer/plans"
-            className="inline-flex mt-3 text-sm font-semibold text-red-800 dark:text-red-200 underline"
-          >
+      <Notice
+        tone="critical"
+        icon={AlertTriangle}
+        title="Subscription expired"
+        className={className}
+        action={
+          <Button as={Link} to="/customer/plans" size="sm" variant="danger">
             Renew plan
-          </Link>
-        </div>
-      </div>
+          </Button>
+        }
+      >
+        Your plan ended on {formatDate(endDate)}. Cameras are no longer monitored until you renew.
+      </Notice>
     );
   }
 
-  if (daysUntilExpiry != null && daysUntilExpiry <= 14 && daysUntilExpiry > 0) {
+  if (days != null && days > 0 && days <= 14) {
     return (
-      <div className="rounded-lg border border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-900/20 p-4 flex gap-3">
-        <Clock className="text-yellow-600 dark:text-yellow-400 shrink-0 mt-0.5" size={20} />
-        <div>
-          <p className="font-semibold text-yellow-800 dark:text-yellow-200">
-            Subscription expiring soon
-          </p>
-          <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
-            Your plan expires in {daysUntilExpiry} day{daysUntilExpiry === 1 ? '' : 's'} (
-            {expiryDate.toLocaleDateString()}). You can renew after {expiryDate.toLocaleDateString()}.
-          </p>
-        </div>
-      </div>
+      <Notice tone="warning" icon={Clock} title={`Subscription ends in ${days} day${days === 1 ? '' : 's'}`} className={className}>
+        Your current term ends on {formatDate(endDate)}. You can renew or change plans once it ends.
+      </Notice>
     );
   }
 

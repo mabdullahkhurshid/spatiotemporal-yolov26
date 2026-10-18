@@ -14,6 +14,45 @@ Iteration 13 is complete. Wait for the next instruction before starting new work
 - Removed unused root dependency `@tensorflow/tfjs` (`npm install` refreshed lockfile).
 - Verification: `npm run build` (frontend) exit 0; `subscriptionTerm` + `checkoutMode` node smoke checks; Python `compileall` for inference app.
 
+### Audit fixes (2026-10-18)
+
+Full-codebase audit with fixes and automated regression tests (`npm test`, `npm run test:inference`).
+
+- Inference: `classes.json` order was `fire, smoke, other`, but the model metadata order is `fire, other, smoke`, so smoke and other were swapped. The detector now reads class names from the ONNX metadata. Detection payloads failed JSON serialization (numpy `float32`) on every frame with a box. Documented `INFERENCE_*` env vars were ignored. Retries now apply only to HTTP errors.
+- Backend: `/api/internal/inference/*` is exempt from the public rate limiter (ingest returned 429 after about 50 s). Request input with `$`-operator keys is rejected, which closes NoSQL injection in the password reset and email verification flows. Refresh is refused for suspended or deleted users.
+- Socket.io: JWT required on connect. Org rooms are limited to the user's own org. Operators receive events only for assigned cameras. The global `alert:<orgId>` broadcast is now scoped. Camera status spoofing is blocked.
+- Alerts: tenant and assignment check on `POST /api/alerts`. Fixed the operator `?cameraId` filter bypass (alerts and incidents). Lifecycle transitions are atomic, and closed alerts cannot be reopened. Emails no longer delay the socket push.
+- Other: org admin can edit their own profile. A rejected replace-assignment keeps existing assignments. Camera heartbeat has a tenant check. Permanent camera delete removes incidents. The refresh token is persisted before the response.
+- Frontend: socket joins the org room (populated `organizationId`), uses a single connection, and handles `alert:updated`. Failed login shows the error instead of reloading the page. Refresh uses `VITE_API_URL`, stores the rotated token, and runs once for parallel 401s. Legacy `/subscribe/:planId` redirect fixed.
+- Verification: 46/46 backend/client tests, 13/13 Python tests, `npm run build` exit 0, 75 s live worker E2E (0 errors, 0 throttled).
+
+### Hardening follow-up (2026-10-18)
+
+- Sessions: refresh tokens are now per-device, hashed sessions (`User.refreshSessions`, `backend/utils/sessions.js`) in an httpOnly cookie scoped to `/api/auth`. Rotation is atomic, with a 30 s grace window for parallel refreshes. Legacy single tokens are migrated on first use. Logout ends this device only, `POST /api/auth/logout-all` ends every device, and a password reset or suspension ends all sessions. The SPA keeps the access token in memory (`services/tokenStore.js`, `JWT_EXPIRE=15m`) and restores the session on reload through the cookie.
+- Google sign-in redirects with a one-time, 2-minute code (`POST /api/auth/oauth/exchange`) instead of tokens in the URL. Live view uses a 60 s camera-scoped `streamToken` (`GET /api/cameras/:id/stream-token`); `?accessToken=` was removed.
+- Secrets (`refreshToken`, sessions, OTP, reset token) are `select: false` and stored hashed. Previously, user API responses returned them; for example, an org admin editing an operator received that operator's refresh token.
+- Rate limits: 1000 requests per 15 min per signed-in user (per IP when anonymous). Failed credential attempts: 10 per 15 min per IP. Email-sending endpoints: 10 per hour. Contact form: 5 per hour. `TRUST_PROXY` added for nginx deployments.
+- Email: forgot-password and resend responses no longer reveal whether an account exists. Five wrong codes invalidate the OTP; `POST /api/auth/resend-verification` added, along with Login and Register UI. verify-email now normalizes the email like register does (dotted/mixed-case Gmail addresses could not verify before).
+- Cameras: stream URLs must be rtsp/rtsps/http/https and must not point at loopback or link-local hosts. Local files and localhost require the `CAMERA_ALLOW_LOCAL_SOURCES=true` opt-in. The policy is enforced at create/update, in the inference registry and in the proxy (ffmpeg `-protocol_whitelist`). Parallel camera or operator creates can no longer exceed plan limits.
+- Real time: super admins get platform-wide alert, incident and status events, but not raw detection frames.
+- Inference: letterbox preprocessing is pixel-identical to Ultralytics `LetterBox`, and NMS is class-aware. On synthetic frames the pipeline matched Ultralytics `predict()` on 15/15 detections. An incident opens only after `INFERENCE_INCIDENT_MIN_CONSECUTIVE` frames (default 3).
+- Frontend: routes are lazy-loaded with vendor chunks; initial JS dropped from 982 KB to about 306 KB. ESLint 9 flat config added, and `npm run lint` passes with 0 warnings. Removed the unused Register organization field.
+- Verification: 74/74 backend/client tests, 18/18 Python tests, lint clean, `npm run build` exit 0, 45 s live worker E2E with 0 errors.
+
+### UI/UX redesign (2026-10-18)
+
+- Design system (ADR-007): semantic tokens for light and dark, cobalt brand with red reserved for alerts, Inter, and shared UI primitives. A single `AppShell` for all roles; routes unchanged.
+- Redesigned: alerts (shared workspace, detail drawer with snapshot and history, resolution outcome), the three role dashboards, cameras (honest tile states, deleted-cameras view with restore), reports, operators, organizations, users, plans, orders, account home, plans and checkout, subscription, profile, settings, help and contact, the landing page, and the sign-in pages.
+- Fixes found during the redesign: org dashboard alert total was capped at 10; org admin profile returned 403 (populated organization compared as an object); orders now record the purchased plan name; lifecycle actions no longer drop populated camera data; the resolve action now sends the outcome; the unread notification count now decreases; a broken /orders link; camera tiles tried to play RTSP in the browser.
+- Verification: 76/76 backend and client tests, 18/18 Python tests, lint clean, build clean, and a full headless-Chrome sweep across roles, sizes and themes with automated accessibility and overflow checks.
+
+### Google sign-in, real email, ONVIF cameras (2026-10-18)
+
+- Email: verified end to end through the configured Gmail SMTP. Register code, password reset link and contact notification each arrived in about 2 s; the code and link read back over IMAP completed verify, login and reset. Templates now HTML-escape names, camera labels and contact messages.
+- Google sign-in: OAuth `state` bound to an httpOnly SameSite=Lax cookie (login CSRF). Google emails are normalized like registration (a dotted or mixed-case Gmail address created a duplicate account before). Unverified Google emails are refused. Cancel, bad state and token errors return to `/login?error=…` instead of a raw 401/500. The code exchange applies the same active-organization check as password login. Missing Google config disables the button path instead of crashing startup. Live sign-in checked by hand against Google.
+- ONVIF (ADR-008): `backend/services/onvif/` with WS-Security digest plus device clock-skew correction, HTTP Digest/Basic fallback, Media1/Media2 and WS-Discovery. `POST /api/cameras/onvif/discover`, `POST /api/cameras/onvif/probe` and `POST /api/cameras/:id/onvif/refresh` added. Passwords are AES-256-GCM encrypted (`CAMERA_CREDENTIALS_KEY`) and added to the stream URL only for the ffmpeg proxy and the inference worker; logs are redacted. UI: ONVIF option in Add camera (scan network, connect, pick profile); ONVIF connection section and Refresh from camera in camera settings.
+- Verification: 98/98 backend tests (new `oauth.test.js` against a mock Google, `onvif.test.js` against a simulated ONVIF device including real multicast discovery), Python tests OK, lint clean, build clean. ONVIF E2E with real video: MediaMTX RTSP behind login, then probe, create, 162 MJPEG frames in 5 s through the proxy, the Python worker ingesting the stream (`streamStatus=ok`), and refresh after a stream path change.
+
 ## Phase 13 Overview
 
 | Phase | Name | Status |

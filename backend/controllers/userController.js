@@ -7,6 +7,7 @@ const OperatorCameraAssignment = require('../models/OperatorCameraAssignment');
 const Notification = require('../models/Notification');
 const AuditLog = require('../models/AuditLog');
 const { sendOperatorWelcomeEmail } = require('../services/emailService');
+const { revokeAllSessions } = require('../utils/sessions');
 
 // @desc    Portal account summary (user + org + subscription)
 // @route   GET /api/users/me/account-summary
@@ -198,7 +199,11 @@ exports.getUser = async (req, res, next) => {
       });
     }
 
-    if (req.user.role === 'org_admin' && user.organizationId?.toString() !== req.user.organizationId?.toString()) {
+    // organizationId is populated here, so compare ids rather than the document itself.
+    const targetOrgId = (user.organizationId?._id || user.organizationId)?.toString();
+    const isSelf = req.params.id === req.user._id.toString();
+
+    if (req.user.role === 'org_admin' && !isSelf && targetOrgId !== req.user.organizationId?.toString()) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized',
@@ -293,6 +298,25 @@ exports.createUser = async (req, res, next) => {
       isEmailVerified: true,
     });
 
+    // Parallel creates can both pass the count check above; keep only the earliest ones (by _id) within the limit.
+    if (user.role === 'operator' && targetOrgId) {
+      const org = await Organization.findById(targetOrgId).populate('subscriptionPlanId');
+      const maxOperators = org?.subscriptionPlanId ? org.subscriptionPlanId.maxOperators : org?.maxOperators || 10;
+      const earlier = await User.countDocuments({
+        organizationId: targetOrgId,
+        role: 'operator',
+        isDeleted: false,
+        _id: { $lt: user._id },
+      });
+      if (earlier >= maxOperators) {
+        await User.deleteOne({ _id: user._id });
+        return res.status(400).json({
+          success: false,
+          message: `Operator limit reached. Maximum ${maxOperators} operators allowed for your plan`,
+        });
+      }
+    }
+
     if (user.role === 'operator') {
       try {
         const loginUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/login`;
@@ -327,8 +351,10 @@ exports.updateUser = async (req, res, next) => {
       });
     }
 
-    // Check access
-    if (req.user.role === 'org_admin') {
+    const isSelf = req.params.id === req.user._id.toString();
+
+    // Check access (org admins may edit their own profile and their organization's operators)
+    if (req.user.role === 'org_admin' && !isSelf) {
       if (user.organizationId?.toString() !== req.user.organizationId?.toString()) {
         return res.status(403).json({
           success: false,
@@ -368,7 +394,7 @@ exports.updateUser = async (req, res, next) => {
     if (phone !== undefined) user.phone = phone;
     if (avatar !== undefined) user.avatar = avatar || null;
     if (role && req.user.role === 'super_admin') user.role = role;
-    if (isActive !== undefined && req.user.role !== 'operator') user.isActive = isActive;
+    if (isActive !== undefined && req.user.role !== 'operator' && !isSelf) user.isActive = isActive;
     if (needsPassword) {
       if (req.user.role === 'super_admin' || (req.user.role === 'org_admin' && user.role === 'operator') || req.params.id === req.user._id.toString()) {
         user.password = password;
@@ -381,6 +407,11 @@ exports.updateUser = async (req, res, next) => {
     }
 
     await user.save();
+
+    // Another admin changed this user's password or deactivated them: end their sessions everywhere.
+    if (!isSelf && (needsPassword || isActive === false)) {
+      await revokeAllSessions(user._id);
+    }
 
     res.status(200).json({
       success: true,
@@ -471,6 +502,7 @@ exports.deleteUser = async (req, res, next) => {
     }
 
     await user.softDelete();
+    await revokeAllSessions(user._id);
 
     res.status(200).json({
       success: true,
@@ -563,6 +595,7 @@ exports.suspendUser = async (req, res, next) => {
 
     user.isActive = false;
     await user.save();
+    await revokeAllSessions(user._id);
 
     res.status(200).json({
       success: true,
@@ -638,6 +671,7 @@ exports.resetUserPassword = async (req, res, next) => {
 
     user.password = req.body.password;
     await user.save();
+    await revokeAllSessions(user._id);
 
     res.status(200).json({
       success: true,

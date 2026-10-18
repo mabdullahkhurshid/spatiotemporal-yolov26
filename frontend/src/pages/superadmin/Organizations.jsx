@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Building2, Check, Eye, MoreHorizontal, Pause, Play, RefreshCw, Trash2, X } from 'lucide-react';
+import toast from 'react-hot-toast';
 import {
   getOrganizations,
   getOrganization,
@@ -8,453 +10,316 @@ import {
   unsuspendOrganization,
   deleteOrganization,
 } from '../../services/apiEndpoints';
-import { Building2, Check, X, Pause, Play, Trash2, RefreshCw, ChevronRight, Users } from 'lucide-react';
-import toast from 'react-hot-toast';
-
-const STATUS_COLORS = {
-  PENDING: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
-  ACTIVE: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
-  REJECTED: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
-  SUSPENDED: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
-};
+import PageHeader from '../../components/ui/PageHeader';
+import Button from '../../components/ui/Button';
+import IconButton from '../../components/ui/IconButton';
+import Card from '../../components/ui/Card';
+import Menu from '../../components/ui/Menu';
+import Avatar from '../../components/ui/Avatar';
+import Dialog, { Drawer } from '../../components/ui/Dialog';
+import DataTable from '../../components/ui/DataTable';
+import { StatusBadge } from '../../components/ui/Badge';
+import { EmptyState, Skeleton } from '../../components/ui/Feedback';
+import { Field, SearchInput, Select, Textarea } from '../../components/ui/Field';
+import { useConfirm } from '../../components/ui/confirmContext';
+import UsageBar from '../../components/account/UsageBar';
+import { formatDate, formatRelative } from '../../utils/format';
 
 const SuperAdminOrganizations = () => {
+  const confirm = useConfirm();
   const [organizations, setOrganizations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
+  const [query, setQuery] = useState('');
   const [rejectModal, setRejectModal] = useState({ open: false, org: null, reason: '' });
-  const [detailDrawer, setDetailDrawer] = useState({ open: false, org: null, loading: false });
+  const [detail, setDetail] = useState({ open: false, org: null, loading: false });
 
-  const loadOrganizations = async () => {
+  const loadOrganizations = useCallback(async () => {
+    setLoading(true);
     try {
-      const params = statusFilter ? { status: statusFilter } : {};
-      const response = await getOrganizations(params);
+      const response = await getOrganizations(statusFilter ? { status: statusFilter } : {});
       setOrganizations(response.data.data);
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to load organizations');
     } finally {
       setLoading(false);
     }
-  };
+  }, [statusFilter]);
 
   useEffect(() => {
     loadOrganizations();
-  }, [statusFilter]);
+  }, [loadOrganizations]);
 
-  const openOrgDetail = async (org) => {
-    setDetailDrawer({ open: true, org: null, loading: true });
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q
+      ? organizations.filter((o) => [o.name, o.email, o.admin?.name, o.admin?.email].filter(Boolean).some((v) => v.toLowerCase().includes(q)))
+      : organizations;
+  }, [organizations, query]);
+
+  const openDetail = async (org) => {
+    setDetail({ open: true, org: null, loading: true });
     try {
       const response = await getOrganization(org._id);
-      setDetailDrawer({ open: true, org: response.data.data, loading: false });
+      setDetail({ open: true, org: response.data.data, loading: false });
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to load organization details');
-      setDetailDrawer({ open: false, org: null, loading: false });
+      setDetail({ open: false, org: null, loading: false });
     }
   };
 
-  const closeDetailDrawer = () => {
-    setDetailDrawer({ open: false, org: null, loading: false });
+  const afterChange = (org) => {
+    loadOrganizations();
+    if (detail.org?._id === org._id) openDetail(org);
   };
 
-  const handleApprove = async (org, event) => {
-    event?.stopPropagation();
+  const run = async (fn, org, success, failure) => {
     try {
-      await approveOrganization(org._id);
-      toast.success('Organization approved');
-      loadOrganizations();
-      if (detailDrawer.org?._id === org._id) {
-        openOrgDetail(org);
-      }
+      await fn(org._id);
+      toast.success(success);
+      afterChange(org);
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to approve');
+      toast.error(error.response?.data?.message || failure);
     }
   };
 
-  const handleReject = () => {
-    if (!rejectModal.org) return;
-    const { org, reason } = rejectModal;
-    rejectOrganization(org._id, reason || 'Rejected by Super Admin')
-      .then(() => {
-        toast.success('Organization rejected');
-        setRejectModal({ open: false, org: null, reason: '' });
-        loadOrganizations();
-        if (detailDrawer.org?._id === org._id) {
-          closeDetailDrawer();
-        }
-      })
-      .catch((err) => toast.error(err.response?.data?.message || 'Failed to reject'));
+  const handleApprove = (org) => run(approveOrganization, org, 'Organization approved', 'Failed to approve');
+
+  const handleSuspend = async (org) => {
+    const ok = await confirm({
+      title: `Suspend ${org.name}?`,
+      description: 'Its users lose access and cameras stop being monitored until you lift the suspension.',
+      confirmLabel: 'Suspend organization',
+      tone: 'danger',
+    });
+    if (ok) run(suspendOrganization, org, 'Organization suspended', 'Failed to suspend');
   };
 
-  const handleSuspend = async (org, event) => {
-    event?.stopPropagation();
-    try {
-      await suspendOrganization(org._id);
-      toast.success('Organization suspended');
-      loadOrganizations();
-      if (detailDrawer.org?._id === org._id) {
-        openOrgDetail(org);
-      }
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to suspend');
-    }
-  };
+  const handleUnsuspend = (org) => run(unsuspendOrganization, org, 'Suspension lifted', 'Failed to lift suspension');
 
-  const handleUnsuspend = async (org, event) => {
-    event?.stopPropagation();
-    try {
-      await unsuspendOrganization(org._id);
-      toast.success('Organization unsuspended');
-      loadOrganizations();
-      if (detailDrawer.org?._id === org._id) {
-        openOrgDetail(org);
-      }
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to unsuspend');
-    }
-  };
-
-  const handleDelete = async (org, event) => {
-    event?.stopPropagation();
-    if (!window.confirm(`Soft delete organization "${org.name}"?`)) return;
+  const handleDelete = async (org) => {
+    const ok = await confirm({
+      title: `Delete ${org.name}?`,
+      description: 'The organization is removed from the platform and its users can no longer sign in to it.',
+      confirmLabel: 'Delete organization',
+      tone: 'danger',
+    });
+    if (!ok) return;
     try {
       await deleteOrganization(org._id);
       toast.success('Organization deleted');
-      if (detailDrawer.org?._id === org._id) {
-        closeDetailDrawer();
-      }
+      if (detail.org?._id === org._id) setDetail({ open: false, org: null, loading: false });
       loadOrganizations();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to delete');
     }
   };
 
-  const renderOrgDetails = (org) => {
-    const admin = org.admin || org.adminId;
-    const operatorCount = org.stats?.operators ?? org.operatorCount ?? 0;
-    const operators = org.operators || [];
-
-    return (
-      <div className="space-y-4 text-sm">
-        <div>
-          <p className="text-gray-500 dark:text-gray-400">Organization Name</p>
-          <p className="font-semibold text-lg text-gray-900 dark:text-white">{org.name}</p>
-        </div>
-        <div>
-          <p className="text-gray-500 dark:text-gray-400">Admin Name</p>
-          <p className="font-medium text-gray-900 dark:text-white">{admin?.name || '—'}</p>
-        </div>
-        <div>
-          <p className="text-gray-500 dark:text-gray-400">Email</p>
-          <p className="font-medium text-gray-900 dark:text-white break-all">{admin?.email || '—'}</p>
-        </div>
-        <div>
-          <p className="text-gray-500 dark:text-gray-400">Total Operators</p>
-          <p className="font-medium text-gray-900 dark:text-white">{operatorCount}</p>
-        </div>
-        {operators.length > 0 ? (
-          <div>
-            <p className="text-gray-500 dark:text-gray-400 mb-2">Operators</p>
-            <ul className="space-y-2">
-              {operators.map((op) => (
-                <li
-                  key={op._id}
-                  className="rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2 bg-white dark:bg-gray-800"
-                >
-                  <p className="font-medium text-gray-900 dark:text-white">{op.name}</p>
-                  <p className="text-gray-600 dark:text-gray-400">{op.email}</p>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : (
-          <p className="text-gray-500 dark:text-gray-400">No operators yet</p>
-        )}
-      </div>
-    );
+  const handleReject = async (e) => {
+    e?.preventDefault();
+    const { org, reason } = rejectModal;
+    if (!org) return;
+    try {
+      await rejectOrganization(org._id, reason || 'Rejected by Super Admin');
+      toast.success('Organization rejected');
+      setRejectModal({ open: false, org: null, reason: '' });
+      loadOrganizations();
+      if (detail.org?._id === org._id) setDetail({ open: false, org: null, loading: false });
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to reject');
+    }
   };
 
-  const detailOrg = detailDrawer.org;
+  const actionsFor = (org) => [
+    { label: 'View details', icon: Eye, onClick: () => openDetail(org) },
+    org.status === 'PENDING' && { label: 'Approve', icon: Check, onClick: () => handleApprove(org) },
+    org.status === 'PENDING' && { label: 'Reject', icon: X, onClick: () => setRejectModal({ open: true, org, reason: '' }) },
+    org.status === 'ACTIVE' && { label: 'Suspend', icon: Pause, onClick: () => handleSuspend(org) },
+    org.status === 'SUSPENDED' && { label: 'Lift suspension', icon: Play, onClick: () => handleUnsuspend(org) },
+    { divider: true },
+    { label: 'Delete organization', icon: Trash2, tone: 'danger', onClick: () => handleDelete(org) },
+  ];
+
+  const columns = [
+    {
+      key: 'name',
+      header: 'Organization',
+      primary: true,
+      cell: (o) => (
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-surface-2 text-fg-subtle">
+            <Building2 size={17} aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate font-medium text-fg">{o.name}</p>
+            <p className="truncate text-xs text-fg-muted">{o.admin?.name ? `${o.admin.name} · ${o.admin.email}` : o.email}</p>
+          </div>
+        </div>
+      ),
+    },
+    { key: 'plan', header: 'Plan', cell: (o) => <span className="text-sm">{o.subscriptionPlanId?.name || '—'}</span> },
+    {
+      key: 'term',
+      header: 'Subscription',
+      hideBelow: 'lg',
+      cell: (o) => (
+        <div className="flex flex-col items-start gap-1">
+          <StatusBadge kind="subscription" value={o.subscriptionStatus} />
+          {o.subscriptionEndDate && <span className="text-xs text-fg-subtle">Ends {formatDate(o.subscriptionEndDate)}</span>}
+        </div>
+      ),
+    },
+    { key: 'operators', header: 'Operators', align: 'right', hideBelow: 'xl', cell: (o) => <span className="tabular text-sm">{o.operatorCount ?? 0}</span> },
+    { key: 'status', header: 'Status', cell: (o) => <StatusBadge kind="org" value={o.status} /> },
+    {
+      key: 'actions',
+      header: 'Actions',
+      align: 'right',
+      cell: (o) => (
+        <div className="flex justify-end gap-1.5">
+          {o.status === 'PENDING' && (
+            <Button size="sm" icon={Check} onClick={() => handleApprove(o)}>
+              Approve
+            </Button>
+          )}
+          <Menu width="w-52" items={actionsFor(o)} trigger={(props) => <IconButton {...props} icon={MoreHorizontal} label={`Actions for ${o.name}`} size="sm" />} />
+        </div>
+      ),
+    },
+  ];
+
+  const org = detail.org;
+  const admin = org?.admin || org?.adminId;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap justify-between items-center gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Organizations</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">View and manage all organizations</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-          >
+    <div>
+      <PageHeader
+        title="Organizations"
+        description="Every customer organization on the platform, with plan, subscription and account status."
+        actions={
+          <Button variant="secondary" icon={RefreshCw} loading={loading} onClick={loadOrganizations}>
+            Refresh
+          </Button>
+        }
+      />
+
+      <Card>
+        <div className="flex flex-col gap-2 border-b border-line px-4 py-3 sm:flex-row sm:px-5">
+          <SearchInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search organization or admin" label="Search organizations" className="sm:max-w-sm" />
+          <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Status" className="sm:w-48">
             <option value="">All statuses</option>
-            <option value="PENDING">PENDING</option>
-            <option value="ACTIVE">ACTIVE</option>
-            <option value="REJECTED">REJECTED</option>
-            <option value="SUSPENDED">SUSPENDED</option>
-          </select>
-          <button
-            type="button"
-            onClick={() => loadOrganizations()}
-            className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"
-          >
-            <RefreshCw size={18} />
-          </button>
+            <option value="ACTIVE">Active</option>
+            <option value="PENDING">Pending</option>
+            <option value="SUSPENDED">Suspended</option>
+            <option value="REJECTED">Rejected</option>
+          </Select>
         </div>
-      </div>
+        <DataTable
+          caption="Organizations"
+          columns={columns}
+          rows={filtered}
+          loading={loading && organizations.length === 0}
+          onRowClick={openDetail}
+          empty={<EmptyState icon={Building2} title={query || statusFilter ? 'No organizations match' : 'No organizations yet'} description="Organizations appear here once a customer purchases a plan." />}
+        />
+      </Card>
 
-      {loading ? (
-        <div className="text-center py-12">Loading...</div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {organizations.map((org) => (
-            <div
-              key={org._id}
-              role="button"
-              tabIndex={0}
-              onClick={() => openOrgDetail(org)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  openOrgDetail(org);
-                }
-              }}
-              className="card cursor-pointer transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <div className="flex items-center space-x-4 mb-4">
-                <div className="bg-blue-100 dark:bg-blue-900 p-3 rounded-lg">
-                  <Building2 className="text-blue-600 dark:text-blue-400" size={24} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-lg truncate">{org.name}</h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 truncate">{org.email}</p>
-                </div>
-                <ChevronRight size={18} className="text-gray-400 shrink-0" />
-              </div>
-              <div className="space-y-2 mb-4">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600 dark:text-gray-400">Plan:</span>
-                  <span className="font-medium">{org.subscriptionPlanId?.name || org.subscriptionPlan}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600 dark:text-gray-400">Status:</span>
-                  <span className={`px-2 py-1 rounded text-xs font-medium ${STATUS_COLORS[org.status] || 'bg-gray-100 text-gray-800'}`}>
-                    {org.status || 'PENDING'}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600 dark:text-gray-400">Org Admin:</span>
-                  <span className="font-medium truncate ml-2">{org.admin?.name || '—'}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600 dark:text-gray-400 flex items-center gap-1">
-                    <Users size={14} /> Operators:
-                  </span>
-                  <span className="font-medium">{org.operatorCount ?? 0}</span>
-                </div>
-                {org.rejectionReason && (
-                  <p className="text-xs text-red-600 dark:text-red-400 mt-1">Reason: {org.rejectionReason}</p>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-2" onClick={(e) => e.stopPropagation()}>
-                {org.status === 'PENDING' && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={(e) => handleApprove(org, e)}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-600 text-white text-sm hover:bg-green-700"
-                    >
-                      <Check size={14} /> Approve
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setRejectModal({ open: true, org, reason: '' });
-                      }}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-600 text-white text-sm hover:bg-red-700"
-                    >
-                      <X size={14} /> Reject
-                    </button>
-                  </>
-                )}
-                {org.status === 'ACTIVE' && (
-                  <button
-                    type="button"
-                    onClick={(e) => handleSuspend(org, e)}
-                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm hover:bg-amber-700"
-                  >
-                    <Pause size={14} /> Suspend
-                  </button>
-                )}
-                {org.status === 'SUSPENDED' && (
-                  <button
-                    type="button"
-                    onClick={(e) => handleUnsuspend(org, e)}
-                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-600 text-white text-sm hover:bg-green-700"
-                  >
-                    <Play size={14} /> Unsuspend
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={(e) => handleDelete(org, e)}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-red-300 text-red-600 dark:border-red-700 dark:text-red-400 text-sm hover:bg-red-50 dark:hover:bg-red-900/20"
-                >
-                  <Trash2 size={14} /> Delete
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {detailDrawer.open && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={closeDetailDrawer}>
-          <div
-            className="w-full max-w-md h-full bg-white dark:bg-gray-800 shadow-xl overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Organization details</h3>
-              <button
-                type="button"
-                onClick={closeDetailDrawer}
-                className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500"
-                aria-label="Close"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-6">
-              {detailDrawer.loading ? (
-                <div className="text-center py-8 text-gray-500">Loading details...</div>
-              ) : detailOrg ? (
-                <>
-                  <div className="flex items-center gap-3">
-                    <div className="bg-blue-100 dark:bg-blue-900 p-3 rounded-lg">
-                      <Building2 className="text-blue-600 dark:text-blue-400" size={24} />
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">Status</p>
-                      <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${STATUS_COLORS[detailOrg.status] || 'bg-gray-100 text-gray-800'}`}>
-                        {detailOrg.status || 'PENDING'}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-900/40">
-                    {renderOrgDetails(detailOrg)}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-                      <p className="text-gray-500 dark:text-gray-400">Total users</p>
-                      <p className="font-semibold text-lg">{detailOrg.stats?.users ?? detailOrg.totalUsers ?? 0}</p>
-                    </div>
-                    <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-                      <p className="text-gray-500 dark:text-gray-400">Cameras</p>
-                      <p className="font-semibold text-lg">{detailOrg.stats?.cameras ?? 0}</p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 dark:text-gray-400">Plan</span>
-                      <span>{detailOrg.subscriptionPlanId?.name || detailOrg.subscriptionPlan}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 dark:text-gray-400">Contact email</span>
-                      <span className="truncate ml-2">{detailOrg.email}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
-                    {detailOrg.status === 'PENDING' && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleApprove(detailOrg)}
-                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-600 text-white text-sm hover:bg-green-700"
-                        >
-                          <Check size={14} /> Approve
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setRejectModal({ open: true, org: detailOrg, reason: '' })}
-                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-600 text-white text-sm hover:bg-red-700"
-                        >
-                          <X size={14} /> Reject
-                        </button>
-                      </>
-                    )}
-                    {detailOrg.status === 'ACTIVE' && (
-                      <button
-                        type="button"
-                        onClick={() => handleSuspend(detailOrg)}
-                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm hover:bg-amber-700"
-                      >
-                        <Pause size={14} /> Suspend
-                      </button>
-                    )}
-                    {detailOrg.status === 'SUSPENDED' && (
-                      <button
-                        type="button"
-                        onClick={() => handleUnsuspend(detailOrg)}
-                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-600 text-white text-sm hover:bg-green-700"
-                      >
-                        <Play size={14} /> Unsuspend
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(detailOrg)}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-red-300 text-red-600 dark:border-red-700 dark:text-red-400 text-sm hover:bg-red-50 dark:hover:bg-red-900/20"
-                    >
-                      <Trash2 size={14} /> Delete
-                    </button>
-                  </div>
-                </>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {rejectModal.open && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold mb-2">Reject organization</h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">{rejectModal.org?.name}</p>
-            <label className="block text-sm font-medium mb-2">Rejection reason (optional)</label>
-            <textarea
-              value={rejectModal.reason}
-              onChange={(e) => setRejectModal((m) => ({ ...m, reason: e.target.value }))}
-              className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm"
-              rows={3}
-              placeholder="Reason for rejection..."
+      <Drawer
+        open={detail.open}
+        onClose={() => setDetail({ open: false, org: null, loading: false })}
+        title={org?.name || 'Organization'}
+        description={org && <span className="flex flex-wrap items-center gap-2"><StatusBadge kind="org" value={org.status} /> <span className="text-fg-subtle">Created {formatRelative(org.createdAt)}</span></span>}
+        footer={
+          org && (
+            <Menu
+              align="right"
+              width="w-52"
+              items={actionsFor(org).filter((i) => i.label !== 'View details')}
+              trigger={(props) => (
+                <Button {...props} variant="secondary" icon={MoreHorizontal}>
+                  Actions
+                </Button>
+              )}
             />
-            <div className="flex justify-end gap-2 mt-4">
-              <button
-                type="button"
-                onClick={() => setRejectModal({ open: false, org: null, reason: '' })}
-                className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleReject}
-                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700"
-              >
-                Reject
-              </button>
-            </div>
+          )
+        }
+      >
+        {detail.loading || !org ? (
+          <div className="space-y-4">
+            <Skeleton className="h-16" />
+            <Skeleton className="h-24" />
+            <Skeleton className="h-32" />
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="space-y-6">
+            <section>
+              <h3 className="eyebrow mb-3">Administrator</h3>
+              <div className="flex items-center gap-3">
+                <Avatar name={admin?.name} email={admin?.email} size="md" />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-fg">{admin?.name || 'No admin assigned'}</p>
+                  <p className="truncate text-sm text-fg-muted">{admin?.email || org.email}</p>
+                </div>
+              </div>
+            </section>
+
+            <section>
+              <h3 className="eyebrow mb-3">Plan & usage</h3>
+              <p className="mb-4 text-sm text-fg">
+                <span className="font-medium">{org.subscriptionPlanId?.name || 'No plan'}</span>
+                {org.subscriptionEndDate && <span className="text-fg-muted"> · term ends {formatDate(org.subscriptionEndDate)}</span>}
+              </p>
+              <div className="space-y-4">
+                <UsageBar label="Cameras" used={org.stats?.cameras ?? 0} limit={org.stats?.maxCameras} />
+                <UsageBar label="Operators" used={org.stats?.operators ?? 0} limit={org.stats?.maxOperators} />
+              </div>
+            </section>
+
+            <section>
+              <h3 className="eyebrow mb-3">Operators ({org.operators?.length || 0})</h3>
+              {org.operators?.length ? (
+                <ul className="divide-y divide-line rounded-md border border-line">
+                  {org.operators.map((op) => (
+                    <li key={op._id} className="flex items-center gap-3 px-3 py-2.5">
+                      <Avatar name={op.name} email={op.email} size="xs" />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-fg">{op.name}</p>
+                        <p className="truncate text-xs text-fg-muted">{op.email}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-fg-muted">No operators yet.</p>
+              )}
+            </section>
+          </div>
+        )}
+      </Drawer>
+
+      <Dialog
+        open={rejectModal.open}
+        onClose={() => setRejectModal({ open: false, org: null, reason: '' })}
+        title={`Reject ${rejectModal.org?.name || 'organization'}?`}
+        description="The applicant will see this reason."
+        size="sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setRejectModal({ open: false, org: null, reason: '' })}>
+              Cancel
+            </Button>
+            <Button type="submit" form="reject-form" variant="danger">
+              Reject organization
+            </Button>
+          </>
+        }
+      >
+        <form id="reject-form" onSubmit={handleReject}>
+          <Field label="Reason" optional>
+            <Textarea rows={3} value={rejectModal.reason} onChange={(e) => setRejectModal((m) => ({ ...m, reason: e.target.value }))} placeholder="e.g. Incomplete organization details" data-autofocus />
+          </Field>
+        </form>
+      </Dialog>
     </div>
   );
 };

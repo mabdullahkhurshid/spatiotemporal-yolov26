@@ -10,6 +10,10 @@ function capitalizePlanKey(key) {
 }
 
 function resolvePlanDisplayName(order, organization) {
+  // Orders record the plan purchased; older orders fall back to the organization's current plan.
+  if (order.planName) {
+    return order.planName;
+  }
   if (organization?.subscriptionPlanId?.name) {
     return organization.subscriptionPlanId.name;
   }

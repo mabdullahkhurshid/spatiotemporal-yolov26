@@ -49,7 +49,7 @@
 **Consequences:**
 - Plan limit enforcement is accurate in UI and API.
 - Soft-delete cascades remove `OperatorCameraAssignment` rows for the camera.
-- ONVIF type is schema-ready but disabled in UI v1 (“Coming soon”).
+- ONVIF type is schema-ready but disabled in UI v1 (“Coming soon”). Superseded by ADR-008.
 
 ## ADR-005: Python ONNX inference sidecar (CPU-first) (2026-10-16)
 
@@ -88,3 +88,37 @@
 - Operators have no renewal UI. Their product access returns when the org admin’s term is active again.
 - Super Admin `assignPlanToOrganization` is unchanged and can still write the same organization outside this checkout path.
 - Portal capacity hints use account-summary usage. Camera usage there is a live count. Operator usage there is the stored `operatorsUsed` counter. Checkout’s live operator count remains the enforcement source.
+
+## ADR-007: Design system and unified app shell (2026-10-18)
+
+**Context:** The UI used Tailwind red as the brand color — the same red as fire alerts and destructive actions — and about 2,000 raw color classes, 11 hand-built tables, 6 separately built dialogs, and two different shells (account portal and operations) for the same user. Contrast failed on the alert actions (as low as 1.92:1).
+
+**Decision:**
+
+- Semantic design tokens (`canvas`, `surface`, `line`, `fg`, `critical`, `warning`, `success`, `info`, `sidebar`) as CSS variables in `frontend/src/index.css`, mapped in `tailwind.config.js`; light and dark themes share one vocabulary. The brand is cobalt (`brand-600 #2B59D9`); red is reserved for fire alerts and destructive actions. `primary-*` is kept as an alias of `brand`.
+- Shared primitives in `frontend/src/components/ui/` (Button, IconButton, Badge/StatusBadge, Card, PageHeader, Field/Input/Select/Switch, Dialog/Drawer with focus trap, ConfirmProvider/useConfirm, Menu, Tabs, DataTable/Pagination, StatGroup, Logo, Avatar). One status vocabulary in `ui/status.js`.
+- One `AppShell` (`components/shell/`) for every signed-in role. Navigation comes from `navConfig.js`; the existing routes and layout files are unchanged (each layout renders `AppShell`). The top bar shows the live active-alert count.
+- Alerts use one workspace (`components/alerts/`) for all three roles, with a single next action per alert and the resolution outcome captured.
+- Inter is self-hosted via `@fontsource-variable/inter`; only the subsets a page needs are downloaded.
+
+**Consequences:**
+
+- New screens should compose primitives and tokens rather than raw palette classes.
+- Theme preference adds a `system` option (no stored key); `setTheme` broadcasts in-tab changes.
+- `window.confirm` is no longer used; destructive actions go through `useConfirm`.
+
+## ADR-008: ONVIF cameras resolve their stream from the device (2026-10-18)
+
+**Context:** ONVIF was schema-only. Users had to find each camera's RTSP path by hand, and RTSP credentials were stored in plain text inside `streamUrl`.
+
+**Decision:**
+- The backend talks ONVIF itself (`backend/services/onvif/`): SOAP 1.2 with WS-Security UsernameToken digest (corrected for device clock skew), HTTP Digest/Basic fallback, Media1 with Media2 fallback, WS-Discovery on every IPv4 interface.
+- Add flow: **Connect** (`POST /api/cameras/onvif/probe`) lists device identity and video profiles; create/update resolve the chosen profile's RTSP URI from the device. Client-supplied `streamUrl` is ignored for ONVIF cameras. Service and stream addresses the device advertises are rebased onto the host the user entered (NAT / port forwarding).
+- Credentials: password AES-256-GCM encrypted in `Camera.onvif.passwordEnc` (`select: false`, stripped by `toJSON`), key `CAMERA_CREDENTIALS_KEY` (falls back to an HKDF of `JWT_SECRET`). `streamUrl` holds no credentials; `authenticatedStreamUrl()` adds them only for the ffmpeg proxy and the API-key-authenticated inference camera list. Logs are redacted.
+- Device and stream addresses follow the same policy as stream URLs (`checkStreamSource`: no loopback/link-local unless `CAMERA_ALLOW_LOCAL_SOURCES=true`). A saved password is reused by probe only for the same host, port and username.
+- Discovery (`POST /api/cameras/onvif/discover`) is on by default outside production and opt-in (`ONVIF_DISCOVERY_ENABLED=true`) in production, where the server usually is not on the cameras' LAN.
+
+**Consequences:**
+- Saving an ONVIF camera requires the device to be reachable; unrelated edits (name, notes) do not contact the device. `POST /api/cameras/:id/onvif/refresh` re-reads the stream address.
+- Rotating the credentials key requires re-entering ONVIF passwords.
+- No PTZ, events or snapshot URI yet.

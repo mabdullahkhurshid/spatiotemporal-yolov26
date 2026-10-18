@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _INFERENCE_ROOT = Path(__file__).resolve().parents[1]
@@ -20,12 +20,28 @@ class Settings(BaseSettings):
     )
     classes_path: str = str(_INFERENCE_ROOT / "config" / "classes.json")
 
-    conf_threshold: float = 0.35
-    iou_threshold: float = 0.45
-    frame_interval_ms: int = 500
-    max_concurrent_cameras: int = 4
+    # INFERENCE_* names are the ones documented in .env.example; bare names kept for compatibility.
+    conf_threshold: float = Field(
+        default=0.35, validation_alias=AliasChoices("INFERENCE_CONF_THRESHOLD", "CONF_THRESHOLD")
+    )
+    iou_threshold: float = Field(
+        default=0.45, validation_alias=AliasChoices("INFERENCE_IOU_THRESHOLD", "IOU_THRESHOLD")
+    )
+    frame_interval_ms: int = Field(
+        default=500, validation_alias=AliasChoices("INFERENCE_FRAME_INTERVAL_MS", "FRAME_INTERVAL_MS")
+    )
+    max_concurrent_cameras: int = Field(
+        default=4,
+        validation_alias=AliasChoices("INFERENCE_MAX_CONCURRENT_CAMERAS", "MAX_CONCURRENT_CAMERAS"),
+    )
 
-    min_consecutive: int = 3
+    min_consecutive: int = Field(
+        default=3, validation_alias=AliasChoices("INFERENCE_MIN_CONSECUTIVE", "MIN_CONSECUTIVE")
+    )
+    incident_min_consecutive: int = Field(
+        default=3,
+        validation_alias=AliasChoices("INFERENCE_INCIDENT_MIN_CONSECUTIVE", "INCIDENT_MIN_CONSECUTIVE"),
+    )
     alert_cooldown_ms: int = 60_000
     incident_end_silence_ms: int = 30_000
 

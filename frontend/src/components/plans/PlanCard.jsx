@@ -1,110 +1,71 @@
-import { billingCycleLabel, formatPrice } from '../../utils/planFormatting';
+import { Check } from 'lucide-react';
+import { billingCycleLabel } from '../../utils/planFormatting';
+import { formatCurrency } from '../../utils/format';
+import { cn } from '../../utils/cn';
+import Button from '../ui/Button';
+import Badge from '../ui/Badge';
 
-const variantStyles = {
-  landing: {
-    card: (plan) =>
-      `relative rounded-xl border p-6 shadow-sm flex flex-col ${
-        plan.isRecommended
-          ? 'border-amber-400 bg-slate-800 ring-1 ring-amber-400/50'
-          : 'border-slate-700 bg-slate-800'
-      }`,
-    title: 'font-semibold text-lg text-white',
-    description: 'text-sm text-slate-300 mt-1',
-    price: 'mt-4 text-3xl font-bold text-white',
-    billing: 'text-xs text-slate-400 mt-1',
-    features: 'mt-4 text-sm text-slate-200 space-y-1 flex-1',
-    button:
-      'mt-6 w-full px-4 py-2 rounded-full bg-amber-500 text-slate-900 font-semibold hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-800',
-  },
-  portal: {
-    card: (plan) =>
-      `relative rounded-xl border p-6 shadow-sm flex flex-col bg-white dark:bg-gray-800 ${
-        plan.isRecommended
-          ? 'border-primary-500 ring-1 ring-primary-500/30'
-          : 'border-gray-200 dark:border-gray-700'
-      }`,
-    title: 'font-semibold text-lg text-gray-900 dark:text-white',
-    description: 'text-sm text-gray-600 dark:text-gray-300 mt-1',
-    price: 'mt-4 text-3xl font-bold text-gray-900 dark:text-white',
-    billing: 'text-xs text-gray-500 dark:text-gray-400 mt-1',
-    features: 'mt-4 text-sm text-gray-600 dark:text-gray-300 space-y-1 flex-1',
-    button:
-      'mt-6 w-full px-4 py-2 rounded-lg bg-primary-600 text-white font-semibold hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900',
-  },
-};
+const PER = { monthly: 'month', quarterly: 'quarter', yearly: 'year', custom: 'term' };
+const SUPPORT = { standard: 'Standard support', priority: 'Priority support', premium: 'Premium support with SLA' };
 
-const PlanCard = ({
-  plan,
-  variant = 'landing',
-  onSubscribe,
-  subscribeLabel = 'Subscribe',
-  disabled = false,
-  capacityHint = '',
-}) => {
-  const styles = variantStyles[variant] || variantStyles.landing;
+const features = (plan) =>
+  [
+    plan.maxCameras != null && `Up to ${plan.maxCameras} cameras`,
+    plan.maxOperators != null && `Up to ${plan.maxOperators} operators`,
+    'Real-time fire & smoke detection',
+    plan.alertRetentionDays != null && `${plan.alertRetentionDays}-day alert history`,
+    plan.storageLimit != null && `${plan.storageLimit} GB snapshot storage`,
+    SUPPORT[plan.supportPriority] || 'Standard support',
+  ].filter(Boolean);
 
+/** Pricing card used on the public pricing section and in the account portal. */
+const PlanCard = ({ plan, onSubscribe, subscribeLabel = 'Subscribe', disabled = false, capacityHint = '' }) => {
+  const highlighted = plan.isRecommended;
   return (
-    <div className={styles.card(plan)}>
-      {(plan.isPopular || plan.isRecommended) && (
-        <div className="absolute -top-3 left-1/2 -translate-x-1/2 flex gap-2">
-          {plan.isPopular && (
-            <span className="px-3 py-0.5 rounded-full text-xs font-semibold bg-amber-500 text-slate-900">
-              Popular
-            </span>
-          )}
-          {plan.isRecommended && (
-            <span className="px-3 py-0.5 rounded-full text-xs font-semibold bg-indigo-500 text-white">
-              Recommended
-            </span>
-          )}
-        </div>
+    <article
+      className={cn(
+        'relative flex flex-col rounded-xl border bg-surface p-6 transition-shadow',
+        highlighted ? 'border-brand-500 shadow-overlay ring-1 ring-brand-500' : 'border-line hover:shadow-overlay'
       )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="text-base font-semibold text-fg">{plan.name || 'Plan'}</h3>
+        <div className="flex flex-wrap justify-end gap-1.5">
+          {plan.isPopular && <Badge tone="warning">Most popular</Badge>}
+          {plan.isRecommended && <Badge tone="brand">Recommended</Badge>}
+        </div>
+      </div>
+      <p className="mt-1.5 min-h-[2.5rem] text-sm text-fg-muted">{plan.description || 'Fire and smoke monitoring for your site.'}</p>
 
-      <h3 className={styles.title}>{plan.name || 'Subscription Plan'}</h3>
-
-      <p className={styles.description}>
-        {plan.description || plan.slug || 'Subscription plan'}
+      <p className="mt-5 flex items-baseline gap-1.5">
+        <span className="tabular text-4xl font-semibold tracking-tight text-fg">{formatCurrency(plan.price, plan.currency)}</span>
+        <span className="text-sm text-fg-muted">/ {PER[plan.billingCycle] || 'month'}</span>
       </p>
-
-      <p className={styles.price}>{formatPrice(plan.price, plan.currency)}</p>
-
-      <p className={styles.billing}>
+      <p className="mt-1 text-xs text-fg-subtle">
         Billed {billingCycleLabel(plan.billingCycle)}
-        {plan.durationMonths ? ` · ${plan.durationMonths} month term` : ''}
+        {plan.durationMonths ? ` · ${plan.durationMonths}-month term` : ''}
       </p>
 
-      <ul className={styles.features}>
-        <li>Max cameras: {plan.maxCameras ?? 'N/A'}</li>
-        <li>Max operators: {plan.maxOperators ?? 'N/A'}</li>
-        <li>
-          Alert retention:{' '}
-          {plan.alertRetentionDays != null ? `${plan.alertRetentionDays} days` : 'N/A'}
-        </li>
-        <li>
-          Storage: {plan.storageLimit != null ? `${plan.storageLimit} GB` : 'N/A'}
-        </li>
-        <li>Support: {plan.supportPriority || 'Standard'}</li>
-      </ul>
-
-      {capacityHint ? (
-        <p
-          className={`mt-4 text-xs font-semibold ${
-            variant === 'landing' ? 'text-amber-300' : 'text-amber-700 dark:text-amber-300'
-          }`}
-        >
-          {capacityHint}
-        </p>
-      ) : null}
-
-      <button
-        type="button"
+      <Button
+        variant={highlighted ? 'primary' : 'secondary'}
+        size="lg"
+        className="mt-6 w-full"
         onClick={() => onSubscribe?.(plan._id)}
         disabled={disabled || !plan._id}
-        className={styles.button}
       >
         {subscribeLabel}
-      </button>
-    </div>
+      </Button>
+      {capacityHint && <p className="mt-2 text-center text-xs font-medium text-warning-fg">{capacityHint}</p>}
+
+      <ul className="mt-6 space-y-2.5 border-t border-line pt-6 text-sm">
+        {features(plan).map((feature) => (
+          <li key={feature} className="flex items-start gap-2.5 text-fg">
+            <Check size={16} className="mt-0.5 shrink-0 text-brand-600 dark:text-brand-300" aria-hidden="true" />
+            {feature}
+          </li>
+        ))}
+      </ul>
+    </article>
   );
 };
 

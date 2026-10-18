@@ -1,85 +1,103 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronDown, HelpCircle, Mail } from 'lucide-react';
+import { ChevronDown, Mail, SearchX } from 'lucide-react';
 import { FAQ_CATEGORIES } from '../../data/faq';
+import PageHeader from '../../components/ui/PageHeader';
+import Button from '../../components/ui/Button';
+import Card, { CardHeader } from '../../components/ui/Card';
+import { EmptyState } from '../../components/ui/Feedback';
+import { SearchInput } from '../../components/ui/Field';
+import { cn } from '../../utils/cn';
 
-const FaqItem = ({ question, answer, isOpen, onToggle }) => (
-  <div className="border-b border-gray-200 dark:border-gray-700 last:border-0">
-    <button
-      type="button"
-      onClick={onToggle}
-      className="w-full flex items-center justify-between gap-4 py-4 text-left"
-      aria-expanded={isOpen}
-    >
-      <span className="text-sm font-medium text-gray-900 dark:text-white">{question}</span>
-      <ChevronDown
-        size={18}
-        className={`flex-shrink-0 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-        aria-hidden="true"
-      />
-    </button>
-    {isOpen && (
-      <p className="pb-4 text-sm text-gray-600 dark:text-gray-400 leading-relaxed">{answer}</p>
-    )}
+const FaqItem = ({ id, question, answer, isOpen, onToggle }) => (
+  <div>
+    <h3>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={isOpen}
+        aria-controls={`faq-${id}`}
+        className="flex w-full items-center justify-between gap-4 px-4 py-3.5 text-left transition-colors hover:bg-surface-2/60 sm:px-5"
+      >
+        <span className="text-sm font-medium text-fg">{question}</span>
+        <ChevronDown size={18} className={cn('shrink-0 text-fg-subtle transition-transform duration-200', isOpen && 'rotate-180')} aria-hidden="true" />
+      </button>
+    </h3>
+    <div id={`faq-${id}`} role="region" hidden={!isOpen} className="px-4 pb-4 text-sm leading-relaxed text-fg-muted sm:px-5">
+      {answer}
+    </div>
   </div>
 );
 
 const HelpPage = () => {
   const [openItems, setOpenItems] = useState({});
+  const [query, setQuery] = useState('');
 
-  const toggleItem = (id) => {
-    setOpenItems((current) => ({ ...current, [id]: !current[id] }));
-  };
+  const categories = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return FAQ_CATEGORIES;
+    return FAQ_CATEGORIES.map((c) => ({ ...c, items: c.items.filter((i) => `${i.question} ${i.answer}`.toLowerCase().includes(q)) })).filter((c) => c.items.length);
+  }, [query]);
+
+  const toggle = (id) => setOpenItems((current) => ({ ...current, [id]: !current[id] }));
 
   return (
-    <div className="max-w-3xl mx-auto space-y-8">
-      <section className="card text-center py-8 px-6">
-        <div className="inline-flex items-center justify-center h-12 w-12 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-600 dark:text-amber-400 mb-4">
-          <HelpCircle size={24} />
-        </div>
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-white">How can we help?</h2>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mt-2 max-w-md mx-auto">
-          Browse common questions about your account, subscriptions, and getting started with
-          FireGuard AI.
-        </p>
-      </section>
+    <div className="space-y-6">
+      <PageHeader
+        title="Help & support"
+        description="Answers about your account, subscription and getting started."
+        actions={
+          <Button as={Link} to="/customer/help/contact" variant="secondary" icon={Mail}>
+            Contact support
+          </Button>
+        }
+        className="mb-0"
+      />
 
-      {FAQ_CATEGORIES.map((category) => (
-        <section key={category.id} className="card">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-            {category.title}
-          </h3>
-          <div>
-            {category.items.map((item) => (
-              <FaqItem
-                key={item.id}
-                question={item.question}
-                answer={item.answer}
-                isOpen={Boolean(openItems[item.id])}
-                onToggle={() => toggleItem(item.id)}
-              />
-            ))}
-          </div>
-        </section>
-      ))}
+      <SearchInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search questions" label="Search help articles" className="sm:max-w-md" />
 
-      <section className="card flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      {categories.length === 0 ? (
+        <Card>
+          <EmptyState
+            icon={SearchX}
+            title="No answers match your search"
+            description="Try other words, or ask our team directly."
+            action={
+              <Button as={Link} to="/customer/help/contact">
+                Contact support
+              </Button>
+            }
+          />
+        </Card>
+      ) : (
+        categories.map((category) => (
+          <Card key={category.id}>
+            <CardHeader title={category.title} />
+            <div className="divide-y divide-line">
+              {category.items.map((item) => (
+                <FaqItem
+                  key={item.id}
+                  id={item.id}
+                  question={item.question}
+                  answer={item.answer}
+                  isOpen={Boolean(query.trim()) || Boolean(openItems[item.id])}
+                  onToggle={() => toggle(item.id)}
+                />
+              ))}
+            </div>
+          </Card>
+        ))
+      )}
+
+      <Card className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h3 className="text-base font-semibold text-gray-900 dark:text-white">
-            Still need help?
-          </h3>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            Send us a message and we will respond to your account email.
-          </p>
+          <p className="text-sm font-semibold text-fg">Still need help?</p>
+          <p className="mt-0.5 text-sm text-fg-muted">Send us a message — we reply to your account email.</p>
         </div>
-        <Link
-          to="/customer/help/contact"
-          className="btn-primary inline-flex items-center gap-2 text-sm flex-shrink-0"
-        >
-          <Mail size={16} />
-          Contact Support
-        </Link>
-      </section>
+        <Button as={Link} to="/customer/help/contact" icon={Mail}>
+          Contact support
+        </Button>
+      </Card>
     </div>
   );
 };

@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import PlanCardGrid from '../../components/plans/PlanCardGrid';
 import PlanCapacityModal from '../../components/plans/PlanCapacityModal';
+import PageHeader from '../../components/ui/PageHeader';
+import { Notice } from '../../components/ui/Feedback';
 import { useRenewalEligibility } from '../../hooks/useRenewalEligibility';
 import { getPublicSubscriptionPlans } from '../../services/publicApi';
 import {
@@ -93,24 +95,24 @@ const PlansPage = () => {
     navigate('/customer/subscription');
   };
 
-  let intro = 'Compare plans for your account.';
+  let intro = 'Every plan includes real-time fire and smoke detection, alert workflows and reports.';
   let subscribeLabel = 'Subscribe';
 
   if (eligibilityLoading) {
     intro = 'Checking your subscription so the right plan action is available.';
   } else if (mode === CHECKOUT_MODE.FIRST_PURCHASE) {
     intro =
-      'Compare plans and subscribe to create your organization and unlock the org admin dashboard.';
+      'Every plan includes real-time fire and smoke detection, alert workflows and reports. Subscribing creates your organization.';
   } else if (isRenewalMode) {
     intro =
-      'Choose a plan to renew this organization. Cameras stay in place when the plan fits your current usage. A smaller plan asks you to remove devices first.';
+      'Choose a plan to renew your organization. Your cameras and operators stay in place when the plan can hold them.';
     subscribeLabel = 'Renew';
   } else if (mode === CHECKOUT_MODE.BLOCKED_ACTIVE) {
-    intro = 'Review available plans. You can change plans after the current term expires.';
-    subscribeLabel = 'View Subscription';
+    intro = 'Your current term is active. You can move to a different plan once it ends.';
+    subscribeLabel = 'View subscription';
   } else if (mode === CHECKOUT_MODE.BLOCKED_SUSPENDED) {
     intro = 'Your organization is suspended. Contact support before choosing a plan.';
-    subscribeLabel = 'View Subscription';
+    subscribeLabel = 'View subscription';
   }
 
   const planCapacityHint = (plan) => {
@@ -119,37 +121,34 @@ const PlansPage = () => {
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      <section>
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-          Subscription Plans
-        </h2>
-        <p className="mt-2 text-sm text-gray-600 dark:text-gray-400 max-w-2xl">
-          {intro}
-        </p>
-        {isRenewalMode && usage && (
-          <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-            Current usage: {usage.camerasUsed ?? 0} cameras, {usage.operatorsUsed ?? 0} operators.
-          </p>
-        )}
-      </section>
+    <div className="space-y-6">
+      <PageHeader title="Plans" description={intro} className="mb-0" />
 
-      {eligibilityError && (
-        <p className="text-sm text-red-600 dark:text-red-400" role="alert">
-          {eligibilityError}
-        </p>
+      {isRenewalMode && usage && (
+        <Notice tone="info" title="Renewing your organization">
+          You currently use {usage.camerasUsed ?? 0} cameras and {usage.operatorsUsed ?? 0} operators. Plans that can&apos;t hold them are marked.
+        </Notice>
       )}
 
+      {eligibilityError && <Notice tone="critical">{eligibilityError}</Notice>}
+
+      <h2 className="sr-only">Available plans</h2>
       <PlanCardGrid
         plans={plans}
         isLoading={isLoadingPlans}
         error={plansError}
-        variant="portal"
         onSubscribe={handleSubscribeClick}
         subscribeLabel={subscribeLabel}
         disableSubscribe={eligibilityLoading || Boolean(eligibilityError)}
         planCapacityHint={planCapacityHint}
       />
+
+      <p className="text-center text-sm text-fg-muted">
+        Prices exclude applicable taxes. Questions about a plan?{' '}
+        <Link to="/customer/help/contact" className="link">
+          Talk to us
+        </Link>
+      </p>
 
       {capacityPlan && (
         <PlanCapacityModal

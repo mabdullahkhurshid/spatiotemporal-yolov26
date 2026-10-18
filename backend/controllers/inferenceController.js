@@ -5,6 +5,9 @@ const Organization = require('../models/Organization');
 const Subscription = require('../models/Subscription');
 const FireIncident = require('../models/FireIncident');
 const { createAlertFromDetection } = require('../services/alertCreationService');
+const { emitToCameraAudience } = require('../sockets/emitters');
+const { checkStreamSource } = require('../utils/streamSource');
+const { authenticatedStreamUrl } = require('../services/onvif');
 
 const liveEmitThrottleMs = parseInt(process.env.INFERENCE_LIVE_EMIT_MS, 10) || 400;
 const lastLiveEmitByCamera = new Map();
@@ -46,9 +49,24 @@ exports.getInferenceCameras = async (req, res, next) => {
       isActive: true,
       streamUrl: { $exists: true, $ne: '' },
       'settings.detectionEnabled': { $ne: false },
-    }).select('_id name label location streamUrl cameraType organizationId settings displayNumber');
+    }).select('_id name label location streamUrl cameraType organizationId settings displayNumber onvif.username +onvif.passwordEnc');
 
-    res.status(200).json({ success: true, count: cameras.length, data: cameras });
+    // Also covers cameras saved before the stream-source policy existed.
+    const allowed = cameras
+      .filter((camera) => {
+        const source = checkStreamSource(camera.streamUrl);
+        if (!source.ok) {
+          console.warn(`Inference skipped camera ${camera._id}: ${source.message}`);
+        }
+        return source.ok;
+      })
+      // The worker (API-key authenticated) needs the ONVIF credentials to open the stream.
+      .map((camera) => {
+        const { onvif, ...rest } = camera.toObject();
+        return { ...rest, streamUrl: authenticatedStreamUrl(camera) };
+      });
+
+    res.status(200).json({ success: true, count: allowed.length, data: allowed });
   } catch (error) {
     next(error);
   }
@@ -113,6 +131,7 @@ exports.ingestDetection = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Camera not found' });
     }
 
+    const audience = { organizationId: camera.organizationId, cameraId: camera._id };
     const now = new Date();
     camera.inference = camera.inference || {};
     camera.inference.lastDetectionAt = now;
@@ -151,7 +170,7 @@ exports.ingestDetection = async (req, res, next) => {
         active.status = 'ended';
         active.endedAt = new Date();
         await active.save();
-        req.io.to(`org:${camera.organizationId}`).emit('incident:ended', {
+        await emitToCameraAudience(req.io, audience, 'incident:ended', {
           incidentId: active._id,
           cameraId: camera._id,
         });
@@ -164,19 +183,26 @@ exports.ingestDetection = async (req, res, next) => {
     const lastEmit = lastLiveEmitByCamera.get(throttleKey) || 0;
     if (Date.now() - lastEmit >= liveEmitThrottleMs) {
       lastLiveEmitByCamera.set(throttleKey, Date.now());
-      req.io.to(`org:${camera.organizationId}`).emit('detection:live', {
-        cameraId: camera._id,
-        timestamp: now.toISOString(),
-        detections,
-        metrics: {
-          fireConfidence: metrics.fireConfidence,
-          smokeConfidence: metrics.smokeConfidence,
-          detectionFrequencyPerMin: metrics.detectionFrequencyPerMin,
-          estimatedSpreadRate: metrics.estimatedSpreadRate,
-          incidentStartedAt: camera.inference.incidentStartedAt,
-          activeIncidentId: camera.inference.activeIncidentId,
+      // Raw detection frames go to the org and assigned operators only (not super admins).
+      await emitToCameraAudience(
+        req.io,
+        audience,
+        'detection:live',
+        {
+          cameraId: camera._id,
+          timestamp: now.toISOString(),
+          detections,
+          metrics: {
+            fireConfidence: metrics.fireConfidence,
+            smokeConfidence: metrics.smokeConfidence,
+            detectionFrequencyPerMin: metrics.detectionFrequencyPerMin,
+            estimatedSpreadRate: metrics.estimatedSpreadRate,
+            incidentStartedAt: camera.inference.incidentStartedAt,
+            activeIncidentId: camera.inference.activeIncidentId,
+          },
         },
-      });
+        { superAdmins: false }
+      );
     }
 
     let alert = null;
@@ -208,7 +234,7 @@ exports.ingestDetection = async (req, res, next) => {
       if (incident && alert) {
         incident.linkedAlertIds.push(alert._id);
         await incident.save();
-        req.io.to(`org:${camera.organizationId}`).emit('incident:updated', { incident });
+        await emitToCameraAudience(req.io, audience, 'incident:updated', { incident });
       }
     }
 

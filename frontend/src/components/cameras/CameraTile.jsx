@@ -1,162 +1,106 @@
-import { Settings, VideoOff } from 'lucide-react';
-import { isCameraOnline } from '../../utils/camera';
+import { useSelector } from 'react-redux';
+import { Flame, Maximize2, Settings, Video, VideoOff } from 'lucide-react';
+import { cameraTitle, isCameraOnline } from '../../utils/camera';
+import { formatRelative } from '../../utils/format';
+import { cn } from '../../utils/cn';
+import IconButton from '../ui/IconButton';
 
-const getPrimaryLabel = (camera) =>
-  camera.displayNumber || camera.label || camera.name || 'Unnamed camera';
+const LIVE_WINDOW_MS = 15 * 1000;
+const MONITORING_WINDOW_MS = 2 * 60 * 1000;
 
-const getSecondaryLabel = (camera) => {
-  const name = camera.label || camera.name;
-  const parts = [];
-  if (camera.displayNumber && name && name !== camera.displayNumber) {
-    parts.push(name);
+/** What the AI pipeline currently reports for this camera. */
+const useAiState = (camera) => {
+  const live = useSelector((state) => state.cameras.liveDetectionById[String(camera._id)]);
+  const liveAge = live?.timestamp ? Date.now() - new Date(live.timestamp).getTime() : Infinity;
+  const hits = (live?.detections || []).filter((d) => d.className === 'fire' || d.className === 'smoke');
+  if (liveAge < LIVE_WINDOW_MS && hits.length) {
+    const fire = Math.round(live.metrics?.fireConfidence || 0);
+    const smoke = Math.round(live.metrics?.smokeConfidence || 0);
+    return { kind: 'detecting', label: fire >= smoke ? `Fire ${fire}%` : `Smoke ${smoke}%` };
   }
-  if (camera.location) {
-    parts.push(camera.location);
+  const last = camera.inference?.lastDetectionAt;
+  if ((last && Date.now() - new Date(last).getTime() < MONITORING_WINDOW_MS) || liveAge < LIVE_WINDOW_MS) {
+    return { kind: 'monitoring', label: 'AI monitoring' };
   }
-  return parts.join(' · ') || 'No location';
+  return null;
 };
 
-const CameraTile = ({
-  camera,
-  compact = true,
-  onOpen,
-  onSettings,
-  showSettings = false,
-}) => {
+/**
+ * Camera card. The preview area states what is known (online, AI status) instead of
+ * attempting browser playback of RTSP streams; live video opens in the viewer.
+ */
+const CameraTile = ({ camera, onOpen, onSettings, showSettings = false }) => {
   const online = isCameraOnline(camera.status);
-  const primaryLabel = getPrimaryLabel(camera);
-  const secondaryLabel = getSecondaryLabel(camera);
-
-  const handleOpen = () => {
-    onOpen?.(camera);
-  };
-
-  const handleSettings = (event) => {
-    event.stopPropagation();
-    onSettings?.(camera);
-  };
-
-  if (!compact) {
-    return (
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={handleOpen}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            handleOpen();
-          }
-        }}
-        className="card flex flex-col space-y-3 text-left w-full hover:ring-2 hover:ring-primary-500/40 transition-shadow cursor-pointer"
-      >
-        <TileHeader
-          primaryLabel={primaryLabel}
-          secondaryLabel={secondaryLabel}
-          online={online}
-          status={camera.status}
-          showSettings={showSettings}
-          onSettings={handleSettings}
-        />
-        <TilePreview camera={camera} compact={false} />
-      </div>
-    );
-  }
+  const ai = useAiState(camera);
+  const detecting = ai?.kind === 'detecting';
+  const title = cameraTitle(camera);
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={handleOpen}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          handleOpen();
-        }
-      }}
-      className="group relative flex flex-col overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm text-left transition-shadow hover:shadow-md hover:ring-2 hover:ring-primary-500/40 focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer"
-    >
-      <TilePreview camera={camera} compact />
-      <div className="p-3 space-y-1">
-        <div className="flex items-start justify-between gap-2">
-          <p className="font-semibold text-sm text-gray-900 dark:text-white truncate">
-            {primaryLabel}
-          </p>
-          <StatusPill online={online} status={camera.status} />
-        </div>
-        <p className="text-xs text-gray-600 dark:text-gray-400 truncate">{secondaryLabel}</p>
-      </div>
-      {showSettings && (
-        <button
-          type="button"
-          onClick={handleSettings}
-          className="absolute top-2 right-2 p-1.5 rounded-md bg-black/50 text-white opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-black/70 transition-opacity"
-          title="Camera settings"
-        >
-          <Settings size={14} />
-        </button>
+    <article
+      className={cn(
+        'group overflow-hidden rounded-lg border bg-surface transition-shadow hover:shadow-overlay',
+        detecting ? 'border-critical ring-1 ring-critical' : 'border-line'
       )}
-    </div>
+    >
+      <button
+        type="button"
+        onClick={() => onOpen?.(camera)}
+        aria-label={`Open live view: ${title}`}
+        className="relative flex aspect-video w-full items-center justify-center bg-[#0B111D] text-left"
+      >
+        {/* faint grid reads as a video surface without pretending to be a frame */}
+        <span
+          aria-hidden="true"
+          className="absolute inset-0 opacity-[0.07] [background-image:linear-gradient(#fff_1px,transparent_1px),linear-gradient(90deg,#fff_1px,transparent_1px)] [background-size:24px_24px]"
+        />
+        <span className="relative flex flex-col items-center gap-1.5 text-white/60">
+          {online ? <Video size={22} aria-hidden="true" /> : <VideoOff size={22} aria-hidden="true" />}
+          <span className="text-xs">{online ? 'Open live view' : 'Camera offline'}</span>
+        </span>
+
+        <span className="absolute left-2.5 top-2.5 inline-flex items-center gap-1.5 rounded-full bg-black/45 px-2 py-0.5 text-2xs font-medium text-white backdrop-blur-sm">
+          <span className={cn('h-1.5 w-1.5 rounded-full', online ? 'bg-emerald-400' : 'bg-slate-400')} aria-hidden="true" />
+          {online ? 'Online' : 'Offline'}
+        </span>
+
+        {camera.displayNumber && (
+          <span className="absolute right-2.5 top-2.5 rounded bg-black/45 px-1.5 py-0.5 font-mono text-2xs text-white/80 backdrop-blur-sm">
+            {camera.displayNumber}
+          </span>
+        )}
+
+        {ai && (
+          <span
+            className={cn(
+              'absolute bottom-2.5 left-2.5 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-2xs font-semibold',
+              detecting ? 'bg-critical text-white' : 'bg-black/45 text-white/85 backdrop-blur-sm'
+            )}
+          >
+            {detecting ? (
+              <Flame size={12} aria-hidden="true" />
+            ) : (
+              <span className="h-1.5 w-1.5 rounded-full bg-sky-400" aria-hidden="true" />
+            )}
+            {ai.label}
+          </span>
+        )}
+
+        <Maximize2 size={14} className="absolute bottom-2.5 right-2.5 text-white/0 transition-colors group-hover:text-white/70" aria-hidden="true" />
+      </button>
+
+      <div className="flex items-center justify-between gap-2 px-3.5 py-3">
+        <div className="min-w-0">
+          <h3 className="truncate text-sm font-medium text-fg" title={title}>
+            {title}
+          </h3>
+          <p className="truncate text-xs text-fg-muted">
+            {online ? camera.location || 'No location set' : `Last seen ${formatRelative(camera.lastHeartbeat || camera.lastActivity)}`}
+          </p>
+        </div>
+        {showSettings && <IconButton icon={Settings} label={`Settings for ${title}`} size="sm" onClick={() => onSettings?.(camera)} />}
+      </div>
+    </article>
   );
 };
-
-const StatusPill = ({ online, status }) => (
-  <span
-    className={`flex-shrink-0 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${
-      online
-        ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200'
-        : 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200'
-    }`}
-  >
-    {online ? 'Online' : status?.toUpperCase() || 'Offline'}
-  </span>
-);
-
-const TileHeader = ({ primaryLabel, secondaryLabel, online, status, showSettings, onSettings }) => (
-  <div className="flex items-start justify-between gap-3">
-    <div className="min-w-0">
-      <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate">
-        {primaryLabel}
-      </h3>
-      <p className="text-sm text-gray-600 dark:text-gray-400 truncate">{secondaryLabel}</p>
-    </div>
-    <div className="flex items-center gap-2 flex-shrink-0">
-      <StatusPill online={online} status={status} />
-      {showSettings && (
-        <button
-          type="button"
-          onClick={onSettings}
-          className="p-1.5 rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"
-          title="Camera settings"
-        >
-          <Settings size={16} />
-        </button>
-      )}
-    </div>
-  </div>
-);
-
-const TilePreview = ({ camera, compact }) => (
-  <div
-    className={`relative w-full bg-gray-900 overflow-hidden ${
-      compact ? 'aspect-[4/3]' : 'aspect-video rounded-lg'
-    }`}
-  >
-    {camera.streamUrl ? (
-      <video
-        src={camera.streamUrl}
-        className="w-full h-full object-cover"
-        autoPlay
-        muted
-        playsInline
-      />
-    ) : (
-      <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-gray-500">
-        <VideoOff size={compact ? 20 : 28} />
-        <span className="text-xs">No stream</span>
-      </div>
-    )}
-  </div>
-);
 
 export default CameraTile;

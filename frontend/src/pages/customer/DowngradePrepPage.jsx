@@ -1,42 +1,42 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Camera, Trash2, ArrowLeft } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CheckCircle2, Trash2, VideoOff } from 'lucide-react';
 import api from '../../services/api';
 import { getAccountSummary } from '../../services/customerApi';
 import { getPublicSubscriptionPlans } from '../../services/publicApi';
+import PageHeader from '../../components/ui/PageHeader';
+import Button from '../../components/ui/Button';
+import Card, { CardHeader } from '../../components/ui/Card';
+import { EmptyState, Notice, Skeleton } from '../../components/ui/Feedback';
+import { useConfirm } from '../../components/ui/confirmContext';
+import UsageBar from '../../components/account/UsageBar';
+import { cameraTitle } from '../../utils/camera';
 
+/** Lets an expired organization remove cameras so a smaller plan fits before renewing. */
 const DowngradePrepPage = () => {
+  const confirm = useConfirm();
   const [searchParams] = useSearchParams();
   const planId = searchParams.get('planId');
-
   const [cameras, setCameras] = useState([]);
   const [usage, setUsage] = useState(null);
-  const [targetMaxCameras, setTargetMaxCameras] = useState(null);
+  const [target, setTarget] = useState(null);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState(null);
 
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [summaryRes, camerasRes] = await Promise.all([
-        getAccountSummary(),
-        api.get('/cameras'),
-      ]);
-
-      const summary = summaryRes?.data?.data;
-      setUsage(summary?.usage ?? null);
-
+      const [summaryRes, camerasRes] = await Promise.all([getAccountSummary(), api.get('/cameras')]);
+      setUsage(summaryRes?.data?.data?.usage ?? null);
       const list = camerasRes?.data?.data;
       setCameras(Array.isArray(list) ? list : []);
-
       if (planId) {
         const plansRes = await getPublicSubscriptionPlans();
         const plans = plansRes?.data?.data;
-        const plan = Array.isArray(plans) ? plans.find((p) => p._id === planId) : null;
-        setTargetMaxCameras(plan?.maxCameras ?? null);
+        setTarget(Array.isArray(plans) ? plans.find((p) => p._id === planId) || null : null);
       } else {
-        setTargetMaxCameras(null);
+        setTarget(null);
       }
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to load cameras');
@@ -51,15 +51,16 @@ const DowngradePrepPage = () => {
   }, [loadData]);
 
   const handleDelete = async (camera) => {
-    const id = camera._id;
-    const label = camera.name || camera.label || 'this camera';
-    if (!window.confirm(`Remove "${label}"? This frees one camera slot for a smaller plan.`)) {
-      return;
-    }
-
+    const ok = await confirm({
+      title: `Remove ${cameraTitle(camera)}?`,
+      description: 'This frees one camera slot. The camera moves to deleted cameras and can be restored later if your plan allows.',
+      confirmLabel: 'Remove camera',
+      tone: 'danger',
+    });
+    if (!ok) return;
     try {
-      setDeletingId(id);
-      await api.delete(`/cameras/${id}`);
+      setDeletingId(camera._id);
+      await api.delete(`/cameras/${camera._id}`);
       toast.success('Camera removed');
       await loadData();
     } catch (error) {
@@ -70,87 +71,70 @@ const DowngradePrepPage = () => {
   };
 
   const cameraCount = usage?.camerasUsed ?? cameras.length;
-  const overTarget =
-    targetMaxCameras != null && Number.isFinite(targetMaxCameras) && cameraCount > targetMaxCameras;
+  const maxCameras = target?.maxCameras;
+  const overBy = maxCameras != null ? Math.max(0, cameraCount - maxCameras) : 0;
+  const fits = maxCameras != null && overBy === 0;
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="space-y-6">
       <div>
-        <Link
-          to={planId ? `/customer/plans` : '/customer/subscription'}
-          className="inline-flex items-center gap-2 text-sm text-primary-600 dark:text-amber-400 hover:underline mb-4"
-        >
-          <ArrowLeft size={16} />
+        <Button as={Link} to={planId ? '/customer/plans' : '/customer/subscription'} variant="link" size="sm" icon={ArrowLeft} className="mb-4">
           Back to plans
-        </Link>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Reduce cameras before renewal</h1>
-        <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-          Your subscription is expired. Remove cameras here so a smaller plan can fit your organization.
-          Operators can be removed from the org admin Users area if you exceed operator limits.
-        </p>
+        </Button>
+        <PageHeader
+          title="Reduce cameras"
+          description="Your subscription has ended. Remove cameras until your setup fits the plan you want to renew onto. Extra operators can be removed from Operators."
+          className="mb-0"
+        />
       </div>
 
-      <div className="card">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 rounded-lg bg-primary-100 dark:bg-primary-900/40">
-            <Camera className="text-primary-600 dark:text-amber-400" size={20} />
-          </div>
-          <div>
-            <p className="font-semibold text-gray-900 dark:text-white">
-              {cameraCount} camera{cameraCount === 1 ? '' : 's'} in use
-            </p>
-            {targetMaxCameras != null && (
-              <p className={`text-sm ${overTarget ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                Selected plan allows {targetMaxCameras} camera{targetMaxCameras === 1 ? '' : 's'}
-                {overTarget
-                  ? ` — remove at least ${cameraCount - targetMaxCameras} more`
-                  : ' — you can proceed to checkout'}
-              </p>
-            )}
-          </div>
-        </div>
+      {target && (
+        <Card className="space-y-4 p-4 sm:p-5">
+          <UsageBar label={`Cameras for the ${target.name} plan`} used={cameraCount} limit={maxCameras} />
+          {fits ? (
+            <Notice
+              tone="success"
+              icon={CheckCircle2}
+              title={`Your cameras now fit the ${target.name} plan`}
+              action={
+                <Button as={Link} to={`/customer/subscribe/${encodeURIComponent(planId)}`} iconRight={ArrowRight}>
+                  Continue to renewal
+                </Button>
+              }
+            />
+          ) : (
+            <Notice tone="warning" title={`Remove ${overBy} more camera${overBy === 1 ? '' : 's'}`}>
+              {target.name} allows {maxCameras} camera{maxCameras === 1 ? '' : 's'}; you have {cameraCount}.
+            </Notice>
+          )}
+        </Card>
+      )}
 
+      <Card>
+        <CardHeader title="Cameras" description={`${cameraCount} in use`} />
         {loading ? (
-          <p className="text-sm text-gray-500 dark:text-gray-400">Loading cameras…</p>
+          <div className="space-y-3 p-5">
+            <Skeleton className="h-10" />
+            <Skeleton className="h-10" />
+          </div>
         ) : cameras.length === 0 ? (
-          <p className="text-sm text-gray-600 dark:text-gray-400">No cameras registered.</p>
+          <EmptyState icon={VideoOff} title="No cameras registered" compact />
         ) : (
-          <ul className="divide-y divide-gray-200 dark:divide-gray-800">
+          <ul className="divide-y divide-line">
             {cameras.map((camera) => (
-              <li key={camera._id} className="py-3 flex items-center justify-between gap-4">
+              <li key={camera._id} className="flex items-center justify-between gap-4 px-4 py-3 sm:px-5">
                 <div className="min-w-0">
-                  <p className="font-medium text-gray-900 dark:text-white truncate">
-                    {camera.name || camera.label || 'Camera'}
-                  </p>
-                  {camera.location && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{camera.location}</p>
-                  )}
+                  <p className="truncate text-sm font-medium text-fg">{cameraTitle(camera)}</p>
+                  {camera.location && <p className="truncate text-xs text-fg-muted">{camera.location}</p>}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleDelete(camera)}
-                  disabled={deletingId === camera._id}
-                  className="btn-secondary text-sm inline-flex items-center gap-1 shrink-0 text-red-600 dark:text-red-400 border-red-200 dark:border-red-900"
-                >
-                  <Trash2 size={14} />
-                  {deletingId === camera._id ? 'Removing…' : 'Remove'}
-                </button>
+                <Button variant="danger-ghost" size="sm" icon={Trash2} loading={deletingId === camera._id} onClick={() => handleDelete(camera)}>
+                  Remove
+                </Button>
               </li>
             ))}
           </ul>
         )}
-      </div>
-
-      {!overTarget && targetMaxCameras != null && planId && (
-        <div className="text-center">
-          <Link
-            to={`/customer/subscribe/${encodeURIComponent(planId)}`}
-            className="btn-primary inline-flex"
-          >
-            Continue to renewal checkout
-          </Link>
-        </div>
-      )}
+      </Card>
     </div>
   );
 };

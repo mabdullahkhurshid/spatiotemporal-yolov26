@@ -13,7 +13,9 @@ const {
   restoreCamera,
   permanentDeleteCamera,
 } = require('../controllers/cameraController');
-const { streamMjpeg } = require('../controllers/cameraStreamController');
+const { streamMjpeg, streamAuth, issueStreamToken } = require('../controllers/cameraStreamController');
+const { discoverOnvif, probeOnvif, refreshOnvifCamera } = require('../controllers/onvifController');
+const { onvifLimiter } = require('../middleware/rateLimits');
 const {
   protect,
   authorize,
@@ -23,12 +25,17 @@ const {
 } = require('../middleware/auth');
 const { validateCamera, validate } = require('../middleware/validation');
 
-router.use((req, res, next) => {
-  if (req.path.endsWith('/stream/mjpeg') && typeof req.query.accessToken === 'string') {
-    req.headers.authorization = `Bearer ${req.query.accessToken}`;
-  }
-  next();
-});
+// <img src> cannot send headers, so the MJPEG proxy accepts a short-lived camera-scoped ?streamToken=
+// (from GET /:id/stream-token) instead of the access token in the URL.
+router.get(
+  '/:id/stream/mjpeg',
+  streamAuth,
+  authorize('super_admin', 'org_admin', 'operator'),
+  requireActiveOrganization,
+  requireVerifiedUser,
+  requireActiveSubscriptionUnlessDeprovision,
+  streamMjpeg
+);
 
 router.use(protect);
 router.use(authorize('super_admin', 'org_admin', 'operator'));
@@ -42,7 +49,11 @@ router.get('/usage', authorize('org_admin'), getCameraUsage);
 
 router.get('/deleted', authorize('super_admin', 'org_admin'), getDeletedCameras);
 
-router.get('/:id/stream/mjpeg', streamMjpeg);
+router.post('/onvif/discover', authorize('super_admin', 'org_admin'), onvifLimiter, discoverOnvif);
+router.post('/onvif/probe', authorize('super_admin', 'org_admin'), onvifLimiter, probeOnvif);
+router.post('/:id/onvif/refresh', authorize('super_admin', 'org_admin'), onvifLimiter, refreshOnvifCamera);
+
+router.get('/:id/stream-token', issueStreamToken);
 
 router.route('/:id/activity').put(updateCameraActivity);
 

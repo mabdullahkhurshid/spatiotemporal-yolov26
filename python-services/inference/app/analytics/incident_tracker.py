@@ -10,6 +10,7 @@ class IncidentState:
     started_at_ms: int | None = None
     last_seen_at_ms: int | None = None
     consecutive: int = 0
+    streak_started_at_ms: int | None = None
     last_alert_at_ms: int = 0
     detection_timestamps: list[int] = field(default_factory=list)
     area_samples: list[dict] = field(default_factory=list)
@@ -22,9 +23,12 @@ class IncidentTracker:
         min_consecutive: int,
         alert_cooldown_ms: int,
         incident_end_silence_ms: int,
+        incident_min_consecutive: int | None = None,
     ):
         self.alert_classes = alert_classes
         self.min_consecutive = min_consecutive
+        # A single-frame false positive must not open an incident; default to the alert confirmation.
+        self.incident_min_consecutive = incident_min_consecutive or min_consecutive
         self.alert_cooldown_ms = alert_cooldown_ms
         self.incident_end_silence_ms = incident_end_silence_ms
         self.state = IncidentState()
@@ -62,10 +66,13 @@ class IncidentTracker:
 
         if has_hit:
             self.state.consecutive += 1
+            if self.state.consecutive == 1:
+                self.state.streak_started_at_ms = now_ms
             self.state.last_seen_at_ms = now_ms
-            if not self.state.active:
+            if not self.state.active and self.state.consecutive >= self.incident_min_consecutive:
                 self.state.active = True
-                self.state.started_at_ms = now_ms
+                # Start at the first frame of the confirming streak, not the confirmation frame.
+                self.state.started_at_ms = self.state.streak_started_at_ms
             self.state.detection_timestamps.append(now_ms)
             area = self._total_area(detections)
             self.state.area_samples.append({"t": now_ms, "area": area})

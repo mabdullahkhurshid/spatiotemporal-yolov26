@@ -103,6 +103,13 @@ const cameraSlice = createSlice({
         };
       }
     },
+    // A camera changed outside the update thunk (e.g. ONVIF stream refreshed from the device).
+    cameraReplaced: (state, action) => {
+      const index = state.cameras.findIndex((c) => c._id === action.payload._id);
+      if (index !== -1) {
+        state.cameras[index] = action.payload;
+      }
+    },
     updateCameraStatus: (state, action) => {
       const { cameraId, status, lastActivity } = action.payload;
       const targetId = cameraId != null ? String(cameraId) : '';
@@ -173,5 +180,5 @@ const cameraSlice = createSlice({
   },
 });
 
-export const { updateCameraStatus, setLiveDetection } = cameraSlice.actions;
+export const { updateCameraStatus, setLiveDetection, cameraReplaced } = cameraSlice.actions;
 export default cameraSlice.reducer;

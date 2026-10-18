@@ -1,20 +1,35 @@
-import { useState, useEffect } from 'react';
-import {
-  getUsers,
-  verifyUser,
-  suspendUser,
-  reactivateUser,
-  resetUserPassword,
-  updateUser,
-  deleteUser,
-} from '../../services/apiEndpoints';
-import { Check, Pause, Play, Key, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { BadgeCheck, KeyRound, MoreHorizontal, Pause, Play, Shield, Trash2, UserCog } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { getUsers, verifyUser, suspendUser, reactivateUser, resetUserPassword, updateUser, deleteUser } from '../../services/apiEndpoints';
+import PageHeader from '../../components/ui/PageHeader';
+import Button from '../../components/ui/Button';
+import IconButton from '../../components/ui/IconButton';
+import Card from '../../components/ui/Card';
+import Menu from '../../components/ui/Menu';
+import Avatar from '../../components/ui/Avatar';
+import Badge, { StatusBadge } from '../../components/ui/Badge';
+import Dialog from '../../components/ui/Dialog';
+import DataTable, { Pagination } from '../../components/ui/DataTable';
+import { EmptyState, Notice } from '../../components/ui/Feedback';
+import { Field, Input, SearchInput, Select } from '../../components/ui/Field';
+import { useConfirm } from '../../components/ui/confirmContext';
+import { formatDate } from '../../utils/format';
+import { roleLabel } from '../../utils/accountFormatting';
+
+const PAGE_SIZE = 20;
+const ROLE_TONE = { super_admin: 'brand', org_admin: 'info', operator: 'neutral', customer: 'neutral' };
 
 const SuperAdminUsers = () => {
+  const confirm = useConfirm();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [modal, setModal] = useState({ open: false, user: null, newPassword: '' });
+  const [query, setQuery] = useState('');
+  const [role, setRole] = useState('all');
+  const [page, setPage] = useState(1);
+  const [passwordModal, setPasswordModal] = useState({ open: false, user: null, value: '', error: '' });
+  const [roleModal, setRoleModal] = useState({ open: false, user: null, value: '' });
+  const [saving, setSaving] = useState(false);
 
   const loadUsers = async () => {
     try {
@@ -31,252 +46,213 @@ const SuperAdminUsers = () => {
     loadUsers();
   }, []);
 
-  const handleVerify = async (user) => {
+  useEffect(() => setPage(1), [query, role]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return users.filter(
+      (u) =>
+        (role === 'all' || u.role === role) &&
+        (!q || [u.name, u.email, u.organizationId?.name].filter(Boolean).some((v) => v.toLowerCase().includes(q)))
+    );
+  }, [users, query, role]);
+
+  const act = async (fn, user, success, failure) => {
     try {
-      await verifyUser(user._id);
-      toast.success('User verified');
+      await fn(user._id);
+      toast.success(success);
       loadUsers();
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to verify');
+      toast.error(error.response?.data?.message || failure);
     }
   };
 
   const handleSuspend = async (user) => {
-    try {
-      await suspendUser(user._id);
-      toast.success('User suspended');
-      loadUsers();
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to suspend');
-    }
-  };
-
-  const handleReactivate = async (user) => {
-    try {
-      await reactivateUser(user._id);
-      toast.success('User reactivated');
-      loadUsers();
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to reactivate');
-    }
-  };
-
-  const handleResetPassword = () => {
-    if (!modal.user || !modal.newPassword || modal.newPassword.length < 6) {
-      toast.error('Password must be at least 6 characters');
-      return;
-    }
-    resetUserPassword(modal.user._id, modal.newPassword)
-      .then(() => {
-        toast.success('Password reset');
-        setModal({ open: false, user: null, newPassword: '' });
-      })
-      .catch((err) => toast.error(err.response?.data?.message || 'Failed to reset password'));
-  };
-
-  const handleRoleChange = async (user, newRole) => {
-    if (user.role === 'super_admin') {
-      toast.error('Cannot change Super Admin role');
-      return;
-    }
-    try {
-      await updateUser(user._id, { role: newRole });
-      toast.success('Role updated');
-      loadUsers();
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to update role');
-    }
+    const ok = await confirm({
+      title: `Suspend ${user.name}?`,
+      description: 'They are signed out on every device and cannot sign in until reactivated.',
+      confirmLabel: 'Suspend user',
+      tone: 'danger',
+    });
+    if (ok) act(suspendUser, user, 'User suspended', 'Failed to suspend');
   };
 
   const handleDelete = async (user) => {
-    const confirmMessage = `Permanently delete user "${user.name}" (${user.email})? They will be removed from the database, login will be blocked immediately, and their email will be available for new signup. This cannot be undone.`;
-    if (!window.confirm(confirmMessage)) return;
+    const ok = await confirm({
+      title: `Delete ${user.name}?`,
+      description: `${user.email} is removed permanently and signed out immediately. The email becomes available for a new account. This cannot be undone.`,
+      confirmLabel: 'Delete user',
+      tone: 'danger',
+    });
+    if (!ok) return;
     try {
       const res = await deleteUser(user._id);
-      const message = res?.data?.message || 'User deleted.';
-      toast.success(message);
+      toast.success(res?.data?.message || 'User deleted');
       loadUsers();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to delete');
     }
   };
 
-  const roleLabel = (r) => {
-    if (r === 'super_admin') return 'Super Admin';
-    if (r === 'org_admin') return 'Org Admin';
-    if (r === 'customer') return 'Customer';
-    return 'Operator';
+  const submitPassword = async (e) => {
+    e.preventDefault();
+    if (passwordModal.value.length < 6) {
+      setPasswordModal((m) => ({ ...m, error: 'Use at least 6 characters.' }));
+      return;
+    }
+    setSaving(true);
+    try {
+      await resetUserPassword(passwordModal.user._id, passwordModal.value);
+      toast.success('Password reset — the user has been signed out everywhere');
+      setPasswordModal({ open: false, user: null, value: '', error: '' });
+    } catch (err) {
+      setPasswordModal((m) => ({ ...m, error: err.response?.data?.message || 'Failed to reset password' }));
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const renderRoleControl = (u) => (
-    <>
-      <span className="px-2 py-1 rounded text-xs bg-gray-100 dark:bg-gray-700">{roleLabel(u.role)}</span>
-      {u.role !== 'super_admin' && (
-        <select
-          value={u.role}
-          onChange={(e) => handleRoleChange(u, e.target.value)}
-          aria-label={`Change role for ${u.name}`}
-          className="text-xs rounded border dark:border-gray-600 bg-white dark:bg-gray-800 py-1"
-        >
-          <option value="org_admin">Org Admin</option>
-          <option value="operator">Operator</option>
-        </select>
-      )}
-    </>
-  );
+  const submitRole = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await updateUser(roleModal.user._id, { role: roleModal.value });
+      toast.success('Role updated');
+      setRoleModal({ open: false, user: null, value: '' });
+      loadUsers();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to update role');
+    } finally {
+      setSaving(false);
+    }
+  };
 
-  const renderActions = (u) => (
-    <div className="flex flex-wrap gap-1">
-      {u.role !== 'super_admin' && !u.isVerified && (
-        <button type="button" onClick={() => handleVerify(u)} className="p-1.5 rounded bg-green-600 text-white hover:bg-green-700" title="Verify">
-          <Check size={14} />
-        </button>
-      )}
-      {u.role !== 'super_admin' && u.isActive && (
-        <button type="button" onClick={() => handleSuspend(u)} className="p-1.5 rounded bg-amber-600 text-white hover:bg-amber-700" title="Suspend">
-          <Pause size={14} />
-        </button>
-      )}
-      {u.role !== 'super_admin' && !u.isActive && (
-        <button type="button" onClick={() => handleReactivate(u)} className="p-1.5 rounded bg-blue-600 text-white hover:bg-blue-700" title="Reactivate">
-          <Play size={14} />
-        </button>
-      )}
-      {u.role !== 'super_admin' && (
-        <button type="button" onClick={() => setModal({ open: true, user: u, newPassword: '' })} className="p-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700" title="Reset password">
-          <Key size={14} />
-        </button>
-      )}
-      {u.role !== 'super_admin' && (
-        <button type="button" onClick={() => handleDelete(u)} className="p-1.5 rounded border border-red-300 text-red-600 hover:bg-red-50 dark:bg-red-900/20" title="Delete">
-          <Trash2 size={14} />
-        </button>
-      )}
-    </div>
-  );
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Users</h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-2">Full user governance across all organizations</p>
-      </div>
-
-      {loading ? (
-        <div className="text-center py-12">Loading...</div>
-      ) : (
-        <>
-          <div className="md:hidden space-y-4">
-            {users.map((u) => (
-              <article key={u._id} className="card space-y-3">
-                <div className="min-w-0">
-                  <h3 className="font-semibold text-gray-900 dark:text-white break-words">{u.name}</h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 break-all">{u.email}</p>
-                </div>
-                <dl className="space-y-2 text-sm">
-                  <div className="flex items-center justify-between gap-3">
-                    <dt className="text-gray-600 dark:text-gray-400 shrink-0">Role</dt>
-                    <dd className="flex flex-wrap items-center justify-end gap-2">{renderRoleControl(u)}</dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <dt className="text-gray-600 dark:text-gray-400 shrink-0">Organization</dt>
-                    <dd className="font-medium text-right break-words">{u.organizationId?.name || '—'}</dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <dt className="text-gray-600 dark:text-gray-400 shrink-0">Verified</dt>
-                    <dd>
-                      {u.role === 'super_admin' ? (
-                        '—'
-                      ) : u.isVerified ? (
-                        <span className="text-green-600 dark:text-green-400">Yes</span>
-                      ) : (
-                        <span className="text-amber-600 dark:text-amber-400">Pending</span>
-                      )}
-                    </dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <dt className="text-gray-600 dark:text-gray-400 shrink-0">Status</dt>
-                    <dd>
-                      {u.isActive ? (
-                        <span className="text-green-600 dark:text-green-400">Active</span>
-                      ) : (
-                        <span className="text-red-600 dark:text-red-400">Suspended</span>
-                      )}
-                    </dd>
-                  </div>
-                </dl>
-                {renderActions(u)}
-              </article>
-            ))}
-          </div>
-
-          <div className="hidden md:block card overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-gray-200 dark:border-gray-700">
-                  <th className="pb-3 font-medium">Name</th>
-                  <th className="pb-3 font-medium">Email</th>
-                  <th className="pb-3 font-medium">Role</th>
-                  <th className="pb-3 font-medium">Organization</th>
-                  <th className="pb-3 font-medium">Verified</th>
-                  <th className="pb-3 font-medium">Status</th>
-                  <th className="pb-3 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((u) => (
-                  <tr key={u._id} className="border-b border-gray-100 dark:border-gray-800">
-                    <td className="py-3">{u.name}</td>
-                    <td className="py-3 text-sm text-gray-600 dark:text-gray-400">{u.email}</td>
-                    <td className="py-3">
-                      <div className="flex flex-wrap items-center gap-2">{renderRoleControl(u)}</div>
-                    </td>
-                    <td className="py-3 text-sm">{u.organizationId?.name || '—'}</td>
-                    <td className="py-3">
-                      {u.role === 'super_admin' ? (
-                        '—'
-                      ) : u.isVerified ? (
-                        <span className="text-green-600 dark:text-green-400">Yes</span>
-                      ) : (
-                        <span className="text-amber-600 dark:text-amber-400">Pending</span>
-                      )}
-                    </td>
-                    <td className="py-3">
-                      {u.isActive ? (
-                        <span className="text-green-600 dark:text-green-400">Active</span>
-                      ) : (
-                        <span className="text-red-600 dark:text-red-400">Suspended</span>
-                      )}
-                    </td>
-                    <td className="py-3">{renderActions(u)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-
-      {modal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 max-w-sm w-full mx-4">
-            <h3 className="text-lg font-semibold mb-2">Reset password</h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">{modal.user?.email}</p>
-            <input
-              type="password"
-              value={modal.newPassword}
-              onChange={(e) => setModal((m) => ({ ...m, newPassword: e.target.value }))}
-              placeholder="New password (min 6 chars)"
-              className="w-full rounded-lg border dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 mb-4"
-              minLength={6}
-            />
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setModal({ open: false, user: null, newPassword: '' })} className="px-4 py-2 rounded-lg border dark:border-gray-600">Cancel</button>
-              <button type="button" onClick={handleResetPassword} className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">Reset</button>
-            </div>
+  const columns = [
+    {
+      key: 'user',
+      header: 'User',
+      primary: true,
+      cell: (u) => (
+        <div className="flex min-w-0 items-center gap-3">
+          <Avatar name={u.name} email={u.email} src={u.avatar} size="sm" />
+          <div className="min-w-0">
+            <p className="flex items-center gap-1.5 truncate font-medium text-fg">
+              {u.name}
+              {u.role !== 'super_admin' && !u.isVerified && <Badge tone="warning" size="xs">Awaiting approval</Badge>}
+            </p>
+            <p className="truncate text-xs text-fg-muted">{u.email}</p>
           </div>
         </div>
-      )}
+      ),
+    },
+    { key: 'role', header: 'Role', cell: (u) => <Badge tone={ROLE_TONE[u.role]}>{roleLabel(u.role)}</Badge> },
+    { key: 'org', header: 'Organization', hideBelow: 'lg', cell: (u) => <span className="text-sm text-fg-muted">{u.organizationId?.name || '—'}</span> },
+    { key: 'joined', header: 'Joined', hideBelow: 'xl', cell: (u) => <span className="text-sm text-fg-muted">{formatDate(u.createdAt)}</span> },
+    { key: 'status', header: 'Status', cell: (u) => <StatusBadge kind="user" value={u.isActive ? 'active' : 'suspended'} /> },
+    {
+      key: 'actions',
+      header: 'Actions',
+      align: 'right',
+      cell: (u) =>
+        u.role === 'super_admin' ? (
+          <span className="inline-flex items-center gap-1 text-xs text-fg-subtle">
+            <Shield size={14} aria-hidden="true" /> Protected
+          </span>
+        ) : (
+          <Menu
+            width="w-52"
+            items={[
+              !u.isVerified && { label: 'Approve account', icon: BadgeCheck, onClick: () => act(verifyUser, u, 'Account approved', 'Failed to approve') },
+              { label: 'Change role', icon: UserCog, onClick: () => setRoleModal({ open: true, user: u, value: u.role === 'org_admin' ? 'org_admin' : 'operator' }) },
+              { label: 'Reset password', icon: KeyRound, onClick: () => setPasswordModal({ open: true, user: u, value: '', error: '' }) },
+              u.isActive
+                ? { label: 'Suspend', icon: Pause, onClick: () => handleSuspend(u) }
+                : { label: 'Reactivate', icon: Play, onClick: () => act(reactivateUser, u, 'User reactivated', 'Failed to reactivate') },
+              { divider: true },
+              { label: 'Delete user', icon: Trash2, tone: 'danger', onClick: () => handleDelete(u) },
+            ]}
+            trigger={(props) => <IconButton {...props} icon={MoreHorizontal} label={`Actions for ${u.name}`} size="sm" />}
+          />
+        ),
+    },
+  ];
+
+  return (
+    <div>
+      <PageHeader title="Users" description="Every account on the platform: administrators, operators and customers." />
+
+      <Card>
+        <div className="flex flex-col gap-2 border-b border-line px-4 py-3 sm:flex-row sm:px-5">
+          <SearchInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, email or organization" label="Search users" className="sm:max-w-sm" />
+          <Select value={role} onChange={(e) => setRole(e.target.value)} aria-label="Role" className="sm:w-48">
+            <option value="all">All roles</option>
+            <option value="org_admin">Organization admins</option>
+            <option value="operator">Operators</option>
+            <option value="customer">Customers</option>
+            <option value="super_admin">Super admins</option>
+          </Select>
+        </div>
+        <DataTable
+          caption="Users"
+          columns={columns}
+          rows={filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)}
+          loading={loading}
+          empty={<EmptyState icon={UserCog} title="No users match" description="Try a different search or role." />}
+        />
+        <Pagination page={page} pageSize={PAGE_SIZE} total={filtered.length} onChange={setPage} />
+      </Card>
+
+      <Dialog
+        open={passwordModal.open}
+        onClose={() => setPasswordModal({ open: false, user: null, value: '', error: '' })}
+        title="Reset password"
+        description={passwordModal.user ? `Set a new password for ${passwordModal.user.name}. They will be signed out on every device.` : undefined}
+        size="sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setPasswordModal({ open: false, user: null, value: '', error: '' })}>
+              Cancel
+            </Button>
+            <Button type="submit" form="reset-password-form" loading={saving}>
+              Reset password
+            </Button>
+          </>
+        }
+      >
+        <form id="reset-password-form" onSubmit={submitPassword}>
+          <Field label="New password" required error={passwordModal.error} hint="At least 6 characters.">
+            <Input type="password" autoComplete="new-password" value={passwordModal.value} onChange={(e) => setPasswordModal((m) => ({ ...m, value: e.target.value, error: '' }))} data-autofocus />
+          </Field>
+        </form>
+      </Dialog>
+
+      <Dialog
+        open={roleModal.open}
+        onClose={() => setRoleModal({ open: false, user: null, value: '' })}
+        title="Change role"
+        description={roleModal.user ? `${roleModal.user.name} · ${roleModal.user.email}` : undefined}
+        size="sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setRoleModal({ open: false, user: null, value: '' })}>
+              Cancel
+            </Button>
+            <Button type="submit" form="role-form" loading={saving} disabled={roleModal.value === roleModal.user?.role}>
+              Save role
+            </Button>
+          </>
+        }
+      >
+        <form id="role-form" onSubmit={submitRole} className="space-y-4">
+          <Field label="Role">
+            <Select value={roleModal.value} onChange={(e) => setRoleModal((m) => ({ ...m, value: e.target.value }))}>
+              <option value="org_admin">Organization admin</option>
+              <option value="operator">Operator</option>
+            </Select>
+          </Field>
+          <Notice tone="warning">Role changes take effect immediately and change what this person can see and do.</Notice>
+        </form>
+      </Dialog>
     </div>
   );
 };
