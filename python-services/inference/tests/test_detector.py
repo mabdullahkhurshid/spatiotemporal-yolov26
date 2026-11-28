@@ -44,6 +44,15 @@ class DecodeTests(unittest.TestCase):
         # The worker posts these dicts as JSON; numpy scalars would make httpx raise TypeError.
         json.dumps(box)
 
+    def test_every_class_score_is_kept_for_explanations(self):
+        raw = np.zeros((1, 7, 1), dtype=np.float32)
+        raw[0, 0:4, 0] = [480, 480, 200, 100]
+        raw[0, 4:7, 0] = [0.81, 0.64, 0.03]
+        box = _fake_detector(["fire", "other", "smoke"], raw).predict(np.zeros((480, 640, 3), dtype=np.uint8))[0].to_dict()
+        self.assertEqual(box["className"], "fire")
+        self.assertEqual(box["scores"], {"fire": 81.0, "other": 64.0, "smoke": 3.0})
+        json.dumps(box)
+
     def test_letterboxed_box_maps_back_to_original_frame(self):
         # 1280x720 frame: ratio 0.75, image occupies 960x540 with 210 px padding top and bottom.
         frame = np.zeros((720, 1280, 3), dtype=np.uint8)

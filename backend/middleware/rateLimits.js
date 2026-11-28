@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
+const { hasValidInferenceKey } = require('../utils/safeCompare');
 
 const intEnv = (name, fallback) => parseInt(process.env[name], 10) || fallback;
 
@@ -19,12 +20,13 @@ const userOrIpKey = (req) => {
   return `ip:${req.ip}`;
 };
 
-// General API limiter. The inference worker posts every frame with its own API key, so it is exempt.
+// General API limiter. The inference worker posts every frame with its own API key, so it is exempt,
+// but only with a valid key: wrong-key attempts count against the caller's IP like any other request.
 exports.apiLimiter = rateLimit({
   windowMs: intEnv('RATE_LIMIT_WINDOW_MS', 15 * 60 * 1000),
   max: intEnv('RATE_LIMIT_MAX_REQUESTS', 1000),
   keyGenerator: userOrIpKey,
-  skip: (req) => req.originalUrl.startsWith('/api/internal/inference/'),
+  skip: (req) => req.originalUrl.startsWith('/api/internal/inference/') && hasValidInferenceKey(req),
   standardHeaders: true,
   legacyHeaders: false,
   message: limitResponse('Too many requests, please try again later.'),

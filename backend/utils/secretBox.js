@@ -4,6 +4,11 @@ const crypto = require('crypto');
 
 let warnedFallback = false;
 
+// Key derived from JWT_SECRET: the default when CAMERA_CREDENTIALS_KEY is not set, and the fallback for
+// decrypting passwords stored before CAMERA_CREDENTIALS_KEY was configured.
+const jwtDerivedKey = () =>
+  Buffer.from(crypto.hkdfSync('sha256', process.env.JWT_SECRET, 'fire-detection', 'camera-credentials', 32));
+
 function key() {
   const configured = process.env.CAMERA_CREDENTIALS_KEY;
   if (configured) {
@@ -16,7 +21,14 @@ function key() {
     warnedFallback = true;
     console.warn('CAMERA_CREDENTIALS_KEY is not set; camera passwords are encrypted with a key derived from JWT_SECRET. Rotating JWT_SECRET will then require re-entering camera passwords.');
   }
-  return Buffer.from(crypto.hkdfSync('sha256', process.env.JWT_SECRET, 'fire-detection', 'camera-credentials', 32));
+  return jwtDerivedKey();
+}
+
+/** Keys to try when decrypting: the active key first, then the legacy JWT-derived key. */
+function decryptionKeys() {
+  const keys = [key()];
+  if (process.env.CAMERA_CREDENTIALS_KEY && process.env.JWT_SECRET) keys.push(jwtDerivedKey());
+  return keys;
 }
 
 function encryptSecret(plain) {
@@ -32,13 +44,22 @@ function decryptSecret(stored) {
   if (!stored) return null;
   const [version, iv, tag, ciphertext] = String(stored).split(':');
   if (version !== 'v1' || !iv || !tag || ciphertext === undefined) return null;
+  let keys;
   try {
-    const decipher = crypto.createDecipheriv('aes-256-gcm', key(), Buffer.from(iv, 'base64'));
-    decipher.setAuthTag(Buffer.from(tag, 'base64'));
-    return Buffer.concat([decipher.update(Buffer.from(ciphertext, 'base64')), decipher.final()]).toString('utf8');
+    keys = decryptionKeys();
   } catch (_) {
     return null;
   }
+  for (const candidate of keys) {
+    try {
+      const decipher = crypto.createDecipheriv('aes-256-gcm', candidate, Buffer.from(iv, 'base64'));
+      decipher.setAuthTag(Buffer.from(tag, 'base64'));
+      return Buffer.concat([decipher.update(Buffer.from(ciphertext, 'base64')), decipher.final()]).toString('utf8');
+    } catch (_) {
+      // wrong key (or tampered data): try the next one
+    }
+  }
+  return null;
 }
 
 module.exports = { encryptSecret, decryptSecret };

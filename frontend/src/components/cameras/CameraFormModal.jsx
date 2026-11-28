@@ -1,16 +1,23 @@
 import { useEffect, useState } from 'react';
 import Dialog from '../ui/Dialog';
 import Button from '../ui/Button';
-import { Field, Input } from '../ui/Field';
+import { Field, Input, Select } from '../ui/Field';
 import { Notice } from '../ui/Feedback';
 import { cn } from '../../utils/cn';
 import OnvifConnectFields from './OnvifConnectFields';
 import { emptyOnvifValue } from '../../utils/onvif';
+import { getDemoFeeds } from '../../services/apiEndpoints';
 
 const CAMERA_TYPES = [
   { value: 'ip_rtsp', label: 'IP / RTSP', hint: 'Most CCTV and NVR channels' },
   { value: 'http_mjpeg', label: 'HTTP MJPEG', hint: 'Web cameras and simple streams' },
   { value: 'onvif', label: 'ONVIF', hint: 'Connect with the camera login' },
+];
+
+// Offered when the server has demo cameras enabled (no hardware needed).
+const DEMO_CAMERA_TYPES = [
+  { value: 'demo_feed', label: 'Demo video', hint: 'Loops a video as a camera' },
+  { value: 'webcam', label: 'Laptop camera', hint: 'Broadcast from this browser' },
 ];
 
 const defaultValues = {
@@ -21,6 +28,7 @@ const defaultValues = {
   ipAddress: '',
   streamUrl: '',
   displayNumber: '',
+  demoClip: '',
   metadata: { model: '', resolution: '', fps: '' },
 };
 
@@ -28,6 +36,19 @@ const CameraFormModal = ({ open, mode = 'add', initialValues, onSubmit, onClose,
   const [form, setForm] = useState(defaultValues);
   const [onvif, setOnvif] = useState(emptyOnvifValue);
   const [onvifConnection, setOnvifConnection] = useState(null);
+  const [demoFeeds, setDemoFeeds] = useState({ enabled: false, clips: [] });
+
+  // Fetched on every open so videos added to demo_videos/ show up without a reload.
+  useEffect(() => {
+    if (!open || mode !== 'add') return undefined;
+    let cancelled = false;
+    getDemoFeeds()
+      .then((res) => !cancelled && setDemoFeeds(res.data.data))
+      .catch(() => !cancelled && setDemoFeeds({ enabled: false, clips: [] }));
+    return () => {
+      cancelled = true;
+    };
+  }, [open, mode]);
 
   useEffect(() => {
     if (!open) return;
@@ -52,6 +73,7 @@ const CameraFormModal = ({ open, mode = 'add', initialValues, onSubmit, onClose,
         ipAddress: initialValues.ipAddress || '',
         streamUrl: initialValues.streamUrl || '',
         displayNumber: initialValues.displayNumber || '',
+        demoClip: initialValues.demo?.clip || '',
         metadata: {
           model: initialValues.metadata?.model || '',
           resolution: initialValues.metadata?.resolution || '',
@@ -65,6 +87,9 @@ const CameraFormModal = ({ open, mode = 'add', initialValues, onSubmit, onClose,
 
   const cameraType = form.cameraType;
   const isOnvif = cameraType === 'onvif';
+  const isDemo = DEMO_CAMERA_TYPES.some((type) => type.value === cameraType);
+  const cameraTypes =
+    demoFeeds.enabled || isDemo ? [...CAMERA_TYPES, ...DEMO_CAMERA_TYPES] : CAMERA_TYPES;
   const ipRequired = cameraType === 'ip_rtsp';
   const streamRequired = cameraType === 'http_mjpeg';
   // A new ONVIF camera must be connected first so the stream profile comes from the device.
@@ -76,6 +101,17 @@ const CameraFormModal = ({ open, mode = 'add', initialValues, onSubmit, onClose,
   const handleSubmit = (event) => {
     event.preventDefault();
     if (onvifIncomplete) return;
+    if (isDemo) {
+      onSubmit?.({
+        name: form.name || form.label,
+        label: form.label || form.name,
+        location: form.location.trim(),
+        cameraType,
+        displayNumber: form.displayNumber.trim() || undefined,
+        demo: cameraType === 'demo_feed' ? { clip: form.demoClip } : undefined,
+      });
+      return;
+    }
     if (isOnvif) {
       onSubmit?.({
         name: form.name || form.label,
@@ -131,7 +167,7 @@ const CameraFormModal = ({ open, mode = 'add', initialValues, onSubmit, onClose,
         <fieldset>
           <legend className="label">Connection type</legend>
           <div className="grid gap-2 sm:grid-cols-3" role="radiogroup">
-            {CAMERA_TYPES.map((type) => {
+            {cameraTypes.map((type) => {
               const selected = form.cameraType === type.value;
               const locked = type.disabled || mode === 'edit';
               return (
@@ -175,7 +211,25 @@ const CameraFormModal = ({ open, mode = 'add', initialValues, onSubmit, onClose,
           <Input value={form.location} onChange={set('location')} placeholder="Warehouse, north wall" />
         </Field>
 
-        {isOnvif ? (
+        {cameraType === 'demo_feed' && (
+          <Field label="Video" required hint="Plays on an endless loop. Add .mp4 files to demo_videos/ to list more.">
+            <Select value={form.demoClip} onChange={set('demoClip')} required disabled={mode === 'edit'}>
+              <option value="" disabled>
+                {demoFeeds.clips.length || mode === 'edit' ? 'Choose a video' : 'No videos in demo_videos/'}
+              </option>
+              {(mode === 'edit' && form.demoClip ? [{ id: form.demoClip, name: form.demoClip }] : demoFeeds.clips).map((clip) => (
+                <option key={clip.id} value={clip.id}>
+                  {clip.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
+        {cameraType === 'webcam' && (
+          <Notice tone="info">After adding, open the camera&apos;s live view and choose Start to broadcast this device&apos;s camera. The feed is live while that view stays open.</Notice>
+        )}
+
+        {isDemo ? null : isOnvif ? (
           <OnvifConnectFields
             value={onvif}
             onChange={setOnvif}

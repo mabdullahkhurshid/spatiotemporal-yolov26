@@ -137,7 +137,11 @@ test('stream tokens follow camera access rules', async () => {
 });
 
 test('local demo sources work end-to-end when explicitly enabled', { skip: !hasFfmpeg && 'ffmpeg not installed' }, async () => {
-  localServer = await startServer({ name: 'streams-local', port: 5619, env: { CAMERA_ALLOW_LOCAL_SOURCES: 'true' } });
+  localServer = await startServer({
+    name: 'streams-local',
+    port: 5619,
+    env: { CAMERA_ALLOW_LOCAL_SOURCES: 'true', CAMERA_STREAM_MAX_PER_USER: '1' },
+  });
   const lfx = createFixtures(localServer);
   const plan = await lfx.seedPlan();
   const admin = await lfx.createOrgAdmin('st-local', plan._id);
@@ -169,8 +173,30 @@ test('local demo sources work end-to-end when explicitly enabled', { skip: !hasF
       if (done) break;
       buffer = Buffer.concat([buffer, Buffer.from(value)]);
     }
+    // Live views are capped per user (CAMERA_STREAM_MAX_PER_USER=1 here): a second one is refused...
+    const streamUrl = `${localServer.baseUrl}/api/cameras/${camId}/stream/mjpeg?streamToken=${token}`;
+    const second = await fetch(streamUrl);
+    assert.equal(second.status, 429);
+    await second.body?.cancel();
+
     controller.abort();
     assert.ok(buffer.indexOf(Buffer.from([0xff, 0xd8, 0xff])) !== -1, 'no JPEG frame received from the proxy');
+
+    // ...and closing the first frees the slot again.
+    let reopened = null;
+    const reopenDeadline = Date.now() + 5000;
+    while (Date.now() < reopenDeadline) {
+      const attempt = new AbortController();
+      const r = await fetch(streamUrl, { signal: attempt.signal });
+      if (r.status === 200) {
+        reopened = r.status;
+        attempt.abort();
+        break;
+      }
+      await r.body?.cancel();
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    assert.equal(reopened, 200, 'slot was not released after the viewer disconnected');
   } finally {
     // Succeeds only once the proxy has killed ffmpeg after the viewer disconnected (Windows locks open files).
     fs.rmSync(video, { force: true, maxRetries: 25, retryDelay: 200 });

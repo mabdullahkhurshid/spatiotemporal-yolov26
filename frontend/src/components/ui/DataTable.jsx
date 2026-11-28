@@ -138,7 +138,7 @@ const DataTable = ({
                     <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                       {details.map((col) => (
                         <div key={col.key} className="min-w-0">
-                          <dt className="text-2xs font-medium uppercase tracking-wide text-fg-subtle">{col.header}</dt>
+                          <dt className="text-xs text-fg-subtle">{col.header}</dt>
                           <dd className="mt-0.5 min-w-0 truncate text-fg">{col.cell ? col.cell(row) : row[col.key]}</dd>
                         </div>
                       ))}

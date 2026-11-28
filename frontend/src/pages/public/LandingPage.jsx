@@ -46,8 +46,8 @@ const STEPS = [
 
 const SectionHeading = ({ eyebrow, title, body, center = false }) => (
   <div className={center ? 'mx-auto max-w-2xl text-center' : 'max-w-xl'}>
-    <p className="text-sm font-semibold text-brand-600 dark:text-brand-300">{eyebrow}</p>
-    <h2 className="mt-2 text-2xl font-semibold tracking-tight text-fg sm:text-3xl">{title}</h2>
+    <p className="text-sm font-medium text-fg-subtle">{eyebrow}</p>
+    <h2 className="mt-2 text-2xl font-medium text-fg sm:text-3xl">{title}</h2>
     {body && <p className="mt-3 text-base text-fg-muted">{body}</p>}
   </div>
 );
@@ -67,7 +67,7 @@ const FramesVisual = () => (
           <div className="relative h-12 rounded bg-[#0A0F18]">
             {f.hit && <span className="absolute bottom-1 left-1/2 h-6 w-7 -translate-x-1/2 rounded-sm border-2 border-[#EF4444]" />}
           </div>
-          <p className="tabular mt-2 text-center text-xs font-semibold text-fg">{f.fire}%</p>
+          <p className="tabular mt-2 text-center text-xs font-medium text-fg">{f.fire}%</p>
         </div>
       ))}
     </div>
@@ -108,7 +108,7 @@ const AccessVisual = () => (
           <p className="text-sm font-medium text-fg">{r.role}</p>
           <p className="truncate text-xs text-fg-muted">{r.scope}</p>
         </div>
-        <ShieldCheck size={16} className="shrink-0 text-brand-600 dark:text-brand-300" />
+        <ShieldCheck size={16} strokeWidth={1.75} className="shrink-0 text-fg-subtle" />
       </div>
     ))}
   </div>
@@ -249,19 +249,14 @@ const LandingPage = () => {
       <main id="main">
         {/* Hero */}
         <section className="relative overflow-hidden bg-[#0B111D] text-white">
-          <div aria-hidden="true" className="absolute inset-0 opacity-[0.05] [background-image:linear-gradient(#fff_1px,transparent_1px),linear-gradient(90deg,#fff_1px,transparent_1px)] [background-size:48px_48px] [mask-image:radial-gradient(ellipse_at_top,black,transparent_70%)]" />
-          <div className="relative mx-auto grid max-w-6xl items-center gap-14 px-4 pb-24 pt-16 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:pb-28 lg:pt-24">
+          <div className="relative mx-auto grid max-w-6xl items-center gap-16 px-4 pb-28 pt-16 sm:px-6 lg:grid-cols-[1fr_1.05fr] lg:pb-32 lg:pt-24">
             <div>
-              <p className="inline-flex items-center gap-2 rounded-full border border-white/15 px-3 py-1 text-xs font-medium text-white/80">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                Fire & smoke detection for existing CCTV
-              </p>
-              <h1 className="mt-6 text-4xl font-semibold leading-[1.1] tracking-tight sm:text-5xl lg:text-[3.4rem]">
+              <h1 className="text-4xl font-medium leading-[1.06] tracking-[-0.03em] sm:text-5xl lg:text-[3.5rem]">
                 See fire before
                 <br />
-                the alarm does.
+                the alarm does
               </h1>
-              <p className="mt-5 max-w-lg text-base leading-relaxed text-white/70 sm:text-lg">
+              <p className="mt-6 max-w-lg text-base leading-relaxed text-white/70 sm:text-lg">
                 FireGuard AI watches your camera feeds around the clock, confirms fire and smoke across consecutive frames, and puts a clear alert in front of the right people within seconds.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
@@ -272,16 +267,8 @@ const LandingPage = () => {
                   How it works
                 </Button>
               </div>
-              <ul className="mt-10 grid max-w-lg grid-cols-1 gap-3 text-sm text-white/70 sm:grid-cols-3">
-                {['Works with RTSP & MJPEG', 'Alerts in real time', 'Role-based access'].map((item) => (
-                  <li key={item} className="flex items-center gap-2">
-                    <Check size={16} className="text-emerald-400" aria-hidden="true" />
-                    {item}
-                  </li>
-                ))}
-              </ul>
             </div>
-            <div className="pb-10 lg:pb-0">
+            <div className="pb-12 lg:pb-0">
               <ProductPreview />
             </div>
           </div>
@@ -315,13 +302,13 @@ const LandingPage = () => {
               {FEATURES.map((f, i) => (
                 <div key={f.title} className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
                   <div className={i % 2 ? 'lg:order-2' : ''}>
-                    <p className="text-sm font-semibold text-brand-600 dark:text-brand-300">{f.eyebrow}</p>
-                    <h3 className="mt-2 text-xl font-semibold tracking-tight text-fg sm:text-2xl">{f.title}</h3>
+                    <p className="text-sm font-medium text-fg-subtle">{f.eyebrow}</p>
+                    <h3 className="mt-2 text-xl font-medium text-fg sm:text-2xl">{f.title}</h3>
                     <p className="mt-3 text-base leading-relaxed text-fg-muted">{f.body}</p>
                     <ul className="mt-5 space-y-2.5">
                       {f.points.map((p) => (
                         <li key={p} className="flex items-start gap-2.5 text-sm text-fg">
-                          <CheckCircle2 size={17} className="mt-0.5 shrink-0 text-brand-600 dark:text-brand-300" aria-hidden="true" />
+                          <Check size={16} strokeWidth={1.75} className="mt-0.5 shrink-0 text-fg-subtle" aria-hidden="true" />
                           {p}
                         </li>
                       ))}
@@ -344,11 +331,11 @@ const LandingPage = () => {
               <span aria-hidden="true" className="absolute left-[12.5%] right-[12.5%] top-6 hidden h-px bg-line-strong lg:block" />
               {STEPS.map(({ icon: Icon, title, body }, i) => (
                 <li key={title} className="relative text-center">
-                  <span className="relative mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-line bg-surface text-brand-600 shadow-xs dark:text-brand-300">
-                    <Icon size={20} aria-hidden="true" />
+                  <span className="relative mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-line bg-surface text-fg-muted shadow-xs">
+                    <Icon size={20} strokeWidth={1.75} aria-hidden="true" />
                   </span>
-                  <p className="mt-4 text-xs font-semibold text-fg-subtle">Step {i + 1}</p>
-                  <h3 className="mt-1 text-base font-semibold text-fg">{title}</h3>
+                  <p className="tabular mt-4 font-mono text-xs text-fg-subtle">Step {i + 1}</p>
+                  <h3 className="mt-1 text-base font-medium text-fg">{title}</h3>
                   <p className="mx-auto mt-2 max-w-xs text-sm text-fg-muted">{body}</p>
                 </li>
               ))}
@@ -429,7 +416,7 @@ const LandingPage = () => {
         <section className="bg-[#0B111D] text-white">
           <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-6 px-4 py-14 sm:px-6 md:flex-row md:items-center">
             <div>
-              <h2 className="text-2xl font-semibold tracking-tight">Start monitoring this week.</h2>
+              <h2 className="text-2xl font-medium">Start monitoring this week</h2>
               <p className="mt-2 text-white/65">Create an account, choose a plan and connect your first camera in minutes.</p>
             </div>
             <div className="flex gap-3">

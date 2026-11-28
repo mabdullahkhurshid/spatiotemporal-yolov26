@@ -4,6 +4,7 @@ const User = require('../models/User');
 const OperatorCameraAssignment = require('../models/OperatorCameraAssignment');
 const { sendAlertEmail } = require('./emailService');
 const { emitToCameraAudience } = require('../sockets/emitters');
+const { buildExplanation, severityFor } = require('./alertExplanation');
 
 /**
  * Create alert, notifications, emails, and socket events.
@@ -23,18 +24,27 @@ async function createAlertFromDetection({
   incidentId,
   primaryClass,
   metricsSnapshot,
+  evidence,
+  visualPending = false,
   createdByUserId,
   actionNote = 'Alert created by AI detection',
 }) {
-  let intensity = intensityLevel;
   const avgConfidence =
     typeof averageConfidence === 'number' ? averageConfidence : (fireConfidence + smokeConfidence) / 2;
+  const intensity = intensityLevel || severityFor(avgConfidence);
 
-  if (!intensity) {
-    if (avgConfidence >= 80) intensity = 'critical';
-    else if (avgConfidence >= 60) intensity = 'high';
-    else if (avgConfidence >= 40) intensity = 'medium';
-    else intensity = 'low';
+  const explanation = buildExplanation({
+    fireConfidence,
+    smokeConfidence,
+    intensityLevel: intensity,
+    intensityProvided: Boolean(intensityLevel),
+    severityValue: avgConfidence,
+    boundingBoxes,
+    metricsSnapshot,
+    evidence,
+  });
+  if (visualPending) {
+    explanation.visual = { status: 'pending', method: 'layercam' };
   }
 
   const alert = await Alert.create({
@@ -51,6 +61,7 @@ async function createAlertFromDetection({
     incidentId,
     primaryClass,
     metricsSnapshot,
+    explanation,
     actions: [
       {
         type: 'CREATED',
@@ -79,13 +90,15 @@ async function createAlertFromDetection({
     isDeleted: false,
   });
 
+  // The most actionable reason: a possible look-alike first, otherwise how the alert was confirmed.
+  const why = (explanation.reasons.find((r) => r.code === 'lookalike') || explanation.reasons.find((r) => r.code === 'confirmed'))?.text;
   const notifications = users.map((user) => ({
     userId: user._id,
     organizationId: camera.organizationId,
     alertId: alert._id,
     type: 'alert',
     title: `Fire Alert: ${camera.label || camera.name}`,
-    message: `Detection (${primaryClass || 'fire/smoke'}) — fire ${fireConfidence}%, smoke ${smokeConfidence}%`,
+    message: `Detection (${primaryClass || 'fire/smoke'}) — fire ${fireConfidence}%, smoke ${smokeConfidence}%${why ? `. ${why}` : ''}`,
     priority: intensity === 'critical' || intensity === 'high' ? 'critical' : 'high',
   }));
 

@@ -4,7 +4,8 @@ import { useDispatch, useSelector } from 'react-redux';
 import { ArrowRight, CalendarClock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { fetchAlertStats } from '../../store/slices/alertSlice';
-import { getOrderStats, getOrders, getOrganizations } from '../../services/apiEndpoints';
+import { getAlertInsights, getOrderStats, getOrders, getOrganizations } from '../../services/apiEndpoints';
+import { RiskModelCard } from '../../components/alerts/ExplainabilityInsights';
 import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import Card, { CardBody, CardHeader } from '../../components/ui/Card';
@@ -23,6 +24,17 @@ const SuperAdminDashboard = () => {
   // Socket alert events update the alerts store; refresh counters when they arrive.
   const liveAlerts = useSelector((state) => state.alerts.alerts);
   const [data, setData] = useState({ orgs: [], orders: [], orderStats: null, loading: true });
+  const [riskModel, setRiskModel] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getAlertInsights({ days: 30 })
+      .then((res) => !cancelled && setRiskModel(res.data.data.model))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -138,24 +150,27 @@ const SuperAdminDashboard = () => {
           />
           <DataTable caption="Recent orders" columns={orderColumns} rows={data.orders} loading={data.loading} empty={<EmptyState title="No orders yet" compact />} />
         </Card>
-        <Card>
-          <CardHeader
-            title="Organizations by status"
-            actions={
-              <Button as={Link} to="/superadmin/organizations" variant="link" size="sm" iconRight={ArrowRight}>
-                Manage
-              </Button>
-            }
-          />
-          <ul className="divide-y divide-line">
-            {['ACTIVE', 'PENDING', 'SUSPENDED', 'REJECTED'].map((status) => (
-              <li key={status} className="flex items-center justify-between px-4 py-3 sm:px-5">
-                <StatusBadge kind="org" value={status} />
-                <span className="tabular text-sm font-semibold text-fg">{byStatus[status] || 0}</span>
-              </li>
-            ))}
-          </ul>
-        </Card>
+        <div className="space-y-6">
+          <RiskModelCard model={riskModel} loading={!riskModel} />
+          <Card>
+            <CardHeader
+              title="Organizations by status"
+              actions={
+                <Button as={Link} to="/superadmin/organizations" variant="link" size="sm" iconRight={ArrowRight}>
+                  Manage
+                </Button>
+              }
+            />
+            <ul className="divide-y divide-line">
+              {['ACTIVE', 'PENDING', 'SUSPENDED', 'REJECTED'].map((status) => (
+                <li key={status} className="flex items-center justify-between px-4 py-3 sm:px-5">
+                  <StatusBadge kind="org" value={status} />
+                  <span className="tabular text-sm font-semibold text-fg">{byStatus[status] || 0}</span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        </div>
       </div>
     </div>
   );

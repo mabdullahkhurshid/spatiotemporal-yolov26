@@ -1,10 +1,11 @@
-import { CheckCircle2, Hand, ImageOff, XCircle } from 'lucide-react';
+import { CheckCircle2, Hand, XCircle } from 'lucide-react';
 import { Drawer } from '../ui/Dialog';
 import Button from '../ui/Button';
 import { StatusBadge } from '../ui/Badge';
-import { assetUrl, formatDateTime, formatPercent, formatRelative } from '../../utils/format';
-import { RESOLUTION_LABEL, cameraLocation, cameraName, isOpen, orgName } from './alertUtils';
+import { formatDateTime, formatPercent, formatRelative } from '../../utils/format';
+import { FALSE_ALARM_CAUSE_LABEL, RESOLUTION_LABEL, cameraLocation, cameraName, isOpen, orgName } from './alertUtils';
 import ConfidenceMeter from './ConfidenceMeter';
+import AlertExplanation, { AlertSnapshot } from './AlertExplanation';
 
 const ACTION_LABEL = {
   CREATED: 'Detected',
@@ -23,7 +24,6 @@ const Row = ({ label, children }) => (
 /** Full context for one alert: snapshot, readings, outcome and the action history. */
 const AlertDetailDrawer = ({ alert, onClose, actions, showOrganization }) => {
   if (!alert) return null;
-  const snapshot = assetUrl(alert.frameSnapshotURL || alert.alertImage);
   const open = isOpen(alert);
 
   return (
@@ -64,16 +64,7 @@ const AlertDetailDrawer = ({ alert, onClose, actions, showOrganization }) => {
       }
     >
       <div className="space-y-6">
-        <figure className="overflow-hidden rounded-lg border border-line bg-surface-2">
-          {snapshot ? (
-            <img src={snapshot} alt={`Frame captured from ${cameraName(alert)} when the alert was raised`} className="aspect-video w-full object-cover" />
-          ) : (
-            <div className="flex aspect-video flex-col items-center justify-center gap-2 text-fg-subtle">
-              <ImageOff size={22} aria-hidden="true" />
-              <span className="text-xs">No snapshot was captured for this alert</span>
-            </div>
-          )}
-        </figure>
+        <AlertSnapshot key={alert._id} alert={alert} />
 
         <section aria-labelledby="readings-heading">
           <h3 id="readings-heading" className="eyebrow mb-3">
@@ -85,11 +76,16 @@ const AlertDetailDrawer = ({ alert, onClose, actions, showOrganization }) => {
           </div>
           {alert.averageConfidence !== undefined && (
             <p className="mt-3 text-xs text-fg-muted">
-              Confirmed over consecutive frames · average confidence {formatPercent(alert.averageConfidence, 1)}
+              {/* averageConfidence is the peak of the frame that raised the alert, not a mean. */}
+              Peak confidence when raised {formatPercent(alert.averageConfidence, 1)}
+              {alert.explanation?.decision?.streakMeanConfidence !== undefined &&
+                ` · average over confirming frames ${formatPercent(alert.explanation.decision.streakMeanConfidence, 1)}`}
               {alert.primaryClass ? ` · primary class: ${alert.primaryClass}` : ''}
             </p>
           )}
         </section>
+
+        <AlertExplanation alert={alert} />
 
         <section aria-labelledby="details-heading">
           <h3 id="details-heading" className="eyebrow mb-1">
@@ -104,6 +100,7 @@ const AlertDetailDrawer = ({ alert, onClose, actions, showOrganization }) => {
             {alert.resolvedAt && <Row label="Closed">{formatDateTime(alert.resolvedAt)}</Row>}
             {alert.resolvedBy?.name && <Row label="Closed by">{alert.resolvedBy.name}</Row>}
             {!open && alert.resolutionType && <Row label="Outcome">{RESOLUTION_LABEL[alert.resolutionType] || alert.resolutionType}</Row>}
+            {alert.falseAlarmCause && <Row label="Cause">{FALSE_ALARM_CAUSE_LABEL[alert.falseAlarmCause] || alert.falseAlarmCause}</Row>}
             {!open && alert.resolutionNote && <Row label="Note">{alert.resolutionNote}</Row>}
           </dl>
         </section>

@@ -1,12 +1,64 @@
 # Current Iteration
 
-**Iteration:** 13 — Subscription renewal & re-subscribe  
-**Started:** 2026-10-16  
-**Status:** Complete — Phase 13.6 signed off 2026-10-17
+**Iteration:** 14 — Explainable alerts (XAI)  
+**Started:** 2026-10-19  
+**Status:** Phases 14.1–14.4 implemented 2026-10-19; browser QA pending  
+**Plan:** `docs/plans/2026-10-19-explainable-alerts.md` · **ADR:** ADR-009
 
 ## Current Step
 
-Iteration 13 is complete. Wait for the next instruction before starting new work.
+Browser QA of the alert drawer and the Reports "Explainable AI" section (see the checklist in `docs/REGRESSION_CHECKLIST.md`). Then wait for the next instruction.
+
+## Phase 14 Overview
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| **14.1** | Decision trace, per-class box scores, false-alarm cause capture | **Complete** |
+| **14.2** | LayerCAM heatmaps in a separate explainer process/container | **Complete** (browser QA pending) |
+| **14.3** | SHAP-explained false-alarm likelihood, gated on labels, retrained by the explainer | **Complete** (inactive until ≥150 labelled alerts) |
+| **14.4** | Reports "Explainable AI" insights, model status, reason in notifications, demo seed | **Complete** (browser QA pending) |
+
+### 14.1 — Decision trace
+
+- [x] Detector keeps every class score per box (`scores: { fire, other, smoke }`) — `python-services/inference/app/model/yolo_onnx.py`
+- [x] `IncidentTracker` sends `metrics.evidence` (rule, thresholds, confirming frames, true streak mean) with `createAlert`; worker adds `confThreshold` / `frameIntervalMs`
+- [x] `backend/services/alertExplanation.js` builds `alert.explanation.decision` and plain-language `reasons`; severity bands moved there (values unchanged)
+- [x] `metricsSnapshot.incidentDurationSec` is now filled; reasons appear in the alert email
+- [x] `PUT /api/alerts/:id/false-alarm` accepts optional `cause` → `Alert.falseAlarmCause`
+- [x] UI: "Why this alert" section, per-box score breakdown, confirming-frames table, false-alarm cause dialog, corrected "average confidence" copy (`averageConfidence` itself unchanged)
+
+### 14.2 — LayerCAM heatmaps
+
+- [x] `XAI_ENABLED=true` queues alerts that have a snapshot and a fire/smoke box (`explanation.visual.status = pending`)
+- [x] `POST /api/internal/inference/explanations/claim` (atomic, stale claims re-queued after 5 min) and `POST /api/internal/inference/explanations/:alertId` (JPEG only, random filename, `alert:explained` to the `alert:new` audience)
+- [x] `python -m app.xai.main` (`npm run explainer`, compose service `explainer`): LayerCAM on `best.pt`, startup parity check against `best.onnx`
+- [x] UI: Original / Model focus toggle, model focus per box with low-focus warning (< 50%), live update via `alert:explained`
+
+### 14.3 — False-alarm likelihood
+
+- [x] `GET /api/internal/inference/explanations/training-data`; `npm run train:risk` (GradientBoosting, CV ROC-AUC/Brier, refuses below 150 labels / 30 per class / AUC 0.6)
+- [x] Explainer adds `explanation.risk` (probability, level, top-3 SHAP contributions) once `weights/risk_model.joblib` exists; UI shows it as advisory
+- [x] Explainer trains on start-up and every `XAI_RETRAIN_HOURS` (default 24), hot-reloads a model written by `npm run train:risk`, and reports status to `POST /api/internal/inference/explanations/model-status` (`XaiModelStatus`)
+
+### 14.4 — Insights
+
+- [x] `GET /api/alerts/insights?days=&cameraId=` (tenant/operator scoped): summary, false-alarm causes, per-camera false-alarm rate / main cause / model focus / look-alike flags, 8×6 detection location grid for one camera (all / real / false alarm), model state (platform counts for super admins only)
+- [x] Reports → "Explainable AI": model card, causes bars, model focus, location map over the camera's latest snapshot, camera table; super admin dashboard shows the model card
+- [x] Notification text includes the most actionable reason (look-alike, else confirmation)
+- [x] `npm run seed:xai-demo -- --camera <id>` fills one camera with labelled sample alerts (refuses `NODE_ENV=production`; `--remove` deletes them)
+
+### Validation (2026-10-19)
+
+- `npm run test:inference`: 38 tests OK (new: class scores, evidence, LayerCAM focus on demo video > 0.6, determinism, pt/onnx parity, risk features, no-look-ahead history, SHAP model, label gate)
+- `npm test`: 117 pass (new: `alertExplanation.test.js`, `explanations.test.js`, `insights.test.js`, ingest decision trace and false-alarm cause in `inference.test.js`)
+- `npm run build` (frontend) and eslint on changed files: clean
+- End-to-end (isolated test DB): real demo frame → ingest → explainer claim → heatmap ready in 8.3 s, focus 77% / 95% on the two fire boxes; pt/onnx max difference 3.5e-7
+- End-to-end 14.3: 220 seeded alerts → explainer trained on start-up (4 s) and reported `active` → new real-fire alert scored Low (0.3%), top factors "other" score −26%, focus −8%. Seeded data is synthetic and separable (ROC-AUC 1.0), so this proves the pipeline, not model quality
+- Not yet verified in a browser: alert drawer and Reports rendering
+
+## Previous — Iteration 13 (Subscription renewal & re-subscribe)
+
+**Started:** 2026-10-16 · **Status:** Complete — Phase 13.6 signed off 2026-10-17
 
 ### Documentation alignment (2026-10-17)
 

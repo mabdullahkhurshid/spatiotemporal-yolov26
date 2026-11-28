@@ -57,8 +57,8 @@ const OrgAdminOperators = () => {
     try {
       const response = await getOperatorAssignments({});
       setAssignments(response.data.data);
-    } catch {
-      toast.error('Failed to load camera assignments');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to load camera assignments');
     }
   };
 
@@ -66,8 +66,8 @@ const OrgAdminOperators = () => {
     try {
       const response = await api.get('/cameras');
       setCameras(response.data.data);
-    } catch {
-      toast.error('Failed to load cameras');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to load cameras');
     }
   };
 

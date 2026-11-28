@@ -273,6 +273,15 @@ The system architecture supports **sensor fusion** by:
 
 ---
 
+### Demo cameras (no hardware)
+
+`docker compose up` also starts **mediamtx** (stream server) and **fakecam**. Running the app on the host with `npm run dev` instead? Run `npm run demo:up` once: it starts just those two from `docker-compose.demo.yml`, and Docker restarts them whenever it starts (`npm run demo:down` removes them). In org admin → Cameras → Add camera:
+
+- **Demo video**: pick a video from `demo_videos/`. fakecam loops every `<name>.mp4` at `rtsp://mediamtx:8554/demo/<name>` (names: letters, digits, `_`, `-`). New files appear in the dropdown and start streaming within seconds.
+- **Laptop camera**: after adding, open its live view and press **Start**. The browser streams its camera over WebRTC to `webcam/<cameraId>`. The feed is live only while that view is open, and camera access needs `http://localhost` or HTTPS. To broadcast from another device, add the host's LAN IP to `webrtcAdditionalHosts` in `infra/mediamtx/mediamtx.yml`.
+
+Settings are in `.env.example` (`DEMO_CAMERAS_ENABLED`, `MEDIAMTX_*`). Demo cameras are off by default in production.
+
 ## 11. Role-Based Access Description
 
 Roles are enforced both **on the backend** (via middleware) and **in the frontend** (route guards and layouts).

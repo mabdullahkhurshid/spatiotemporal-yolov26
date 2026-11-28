@@ -95,8 +95,9 @@
     font-feature-settings: 'cv11', 'ss01';
   }
 
-  h1, h2, h3, h4 {
-    @apply tracking-tight;
+  /* Tight tracking only reads well on display sizes; small headings keep normal spacing. */
+  h1, h2 {
+    letter-spacing: -0.01em;
   }
 
   /* One consistent, visible keyboard focus indicator; none for mouse clicks. */
@@ -162,7 +163,7 @@
   }
 
   .eyebrow {
-    @apply text-2xs font-semibold uppercase tracking-[0.08em] text-fg-subtle;
+    @apply text-xs font-medium text-fg-subtle;
   }
 
   .link {

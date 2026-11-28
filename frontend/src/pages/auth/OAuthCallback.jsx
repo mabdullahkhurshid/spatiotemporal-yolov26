@@ -52,7 +52,7 @@ const OAuthCallback = () => {
         }
 
         navigate(getPostAuthRedirectPath(user.role));
-        toast.success('Login successful!');
+        toast.success('Signed in');
       } catch (error) {
         console.error('OAuth callback error:', error);
         toast.error(error.response?.data?.message || 'Authentication failed');

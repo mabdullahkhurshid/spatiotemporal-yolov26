@@ -7,26 +7,38 @@ const FireIncident = require('../models/FireIncident');
 const { createAlertFromDetection } = require('../services/alertCreationService');
 const { emitToCameraAudience } = require('../sockets/emitters');
 const { checkStreamSource } = require('../utils/streamSource');
-const { authenticatedStreamUrl } = require('../services/onvif');
+const { DEMO_TYPES, isDemoType, demoCamerasEnabled, resolveStreamUrl } = require('../utils/demoSource');
 
 const liveEmitThrottleMs = parseInt(process.env.INFERENCE_LIVE_EMIT_MS, 10) || 400;
 const lastLiveEmitByCamera = new Map();
 
 const uploadsRoot = path.join(__dirname, '..', '..', 'uploads', 'snapshots');
 
-function ensureUploadsDir(orgId) {
-  const dir = path.join(uploadsRoot, String(orgId));
-  fs.mkdirSync(dir, { recursive: true });
-  return dir;
-}
+// Decoded snapshots above this size are refused (the JSON body limit is 10 MB of base64).
+const MAX_SNAPSHOT_BYTES = 7 * 1024 * 1024;
+const isJpeg = (buffer) => buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
 
-function saveSnapshot(orgId, cameraId, base64) {
-  if (!base64) return null;
-  const dir = ensureUploadsDir(orgId);
-  const filename = `${cameraId}-${Date.now()}.jpg`;
-  const fullPath = path.join(dir, filename);
-  fs.writeFileSync(fullPath, Buffer.from(base64, 'base64'));
-  return `/uploads/snapshots/${orgId}/${filename}`;
+/**
+ * Stores a JPEG snapshot and returns its URL, or null when there is none or it is not a usable JPEG.
+ * A bad snapshot never blocks the alert: the alert is created without an image.
+ */
+async function saveSnapshot(orgId, cameraId, base64) {
+  if (!base64 || typeof base64 !== 'string') return null;
+  const buffer = Buffer.from(base64, 'base64');
+  if (buffer.length > MAX_SNAPSHOT_BYTES || !isJpeg(buffer)) {
+    console.warn(`Ignoring invalid snapshot for camera ${cameraId} (${buffer.length} bytes)`);
+    return null;
+  }
+  try {
+    const dir = path.join(uploadsRoot, String(orgId));
+    await fs.promises.mkdir(dir, { recursive: true });
+    const filename = `${cameraId}-${Date.now()}.jpg`;
+    await fs.promises.writeFile(path.join(dir, filename), buffer);
+    return `/uploads/snapshots/${orgId}/${filename}`;
+  } catch (error) {
+    console.error(`Could not store snapshot for camera ${cameraId}:`, error.message);
+    return null;
+  }
 }
 
 async function getActiveOrgIds() {
@@ -47,13 +59,17 @@ exports.getInferenceCameras = async (req, res, next) => {
       organizationId: { $in: activeOrgIds },
       isDeleted: false,
       isActive: true,
-      streamUrl: { $exists: true, $ne: '' },
+      $or: [{ streamUrl: { $exists: true, $ne: '' } }, { cameraType: { $in: DEMO_TYPES } }],
       'settings.detectionEnabled': { $ne: false },
-    }).select('_id name label location streamUrl cameraType organizationId settings displayNumber onvif.username +onvif.passwordEnc');
+      // Paused cameras get no detection: the worker stops within one registry poll.
+      status: { $ne: 'paused' },
+    }).select('_id name label location streamUrl cameraType organizationId settings displayNumber demo onvif.username +onvif.passwordEnc');
 
     // Also covers cameras saved before the stream-source policy existed.
     const allowed = cameras
       .filter((camera) => {
+        // Demo streams come from server config (MediaMTX), not a user URL.
+        if (isDemoType(camera.cameraType)) return demoCamerasEnabled() && Boolean(resolveStreamUrl(camera));
         const source = checkStreamSource(camera.streamUrl);
         if (!source.ok) {
           console.warn(`Inference skipped camera ${camera._id}: ${source.message}`);
@@ -63,7 +79,7 @@ exports.getInferenceCameras = async (req, res, next) => {
       // The worker (API-key authenticated) needs the ONVIF credentials to open the stream.
       .map((camera) => {
         const { onvif, ...rest } = camera.toObject();
-        return { ...rest, streamUrl: authenticatedStreamUrl(camera) };
+        return { ...rest, streamUrl: resolveStreamUrl(camera) };
       });
 
     res.status(200).json({ success: true, count: allowed.length, data: allowed });
@@ -145,7 +161,17 @@ exports.ingestDetection = async (req, res, next) => {
     camera.markModified('inference');
     if (streamStatus === 'ok') {
       camera.inference.status = 'ok';
+      const previousStatus = camera.status;
       await camera.updateActivity();
+      // Without this the dashboard keeps showing OFFLINE: the stream check only emits on its own changes.
+      if (camera.status !== previousStatus) {
+        await emitToCameraAudience(req.io, audience, 'camera:status:update', {
+          cameraId: camera._id,
+          status: camera.status,
+          lastHeartbeat: camera.lastHeartbeat,
+          lastActivity: camera.lastActivity,
+        });
+      }
     } else {
       camera.inference.status = 'degraded';
       await camera.save();
@@ -207,13 +233,14 @@ exports.ingestDetection = async (req, res, next) => {
 
     let alert = null;
     if (metrics.createAlert) {
-      const snapshotUrl = saveSnapshot(camera.organizationId, camera._id, snapshotBase64);
+      const snapshotUrl = await saveSnapshot(camera.organizationId, camera._id, snapshotBase64);
       if (snapshotUrl && incident) {
         incident.lastSnapshotURL = snapshotUrl;
         await incident.save();
       }
 
       const primaryDetection = detections.find((d) => d.className === 'fire' || d.className === 'smoke');
+      const incidentDurationSec = incident?.startedAt ? Math.max(0, Math.round((now - incident.startedAt) / 1000)) : undefined;
       alert = await createAlertFromDetection({
         io: req.io,
         camera,
@@ -227,7 +254,11 @@ exports.ingestDetection = async (req, res, next) => {
         metricsSnapshot: {
           detectionFrequencyPerMin: metrics.detectionFrequencyPerMin,
           estimatedSpreadRate: metrics.estimatedSpreadRate,
+          incidentDurationSec,
         },
+        evidence: metrics.evidence,
+        // The explainer process (python -m app.xai.main) turns the snapshot into a heatmap later.
+        visualPending: process.env.XAI_ENABLED === 'true' && Boolean(snapshotUrl && primaryDetection),
         actionNote: 'Alert created by inference service',
       });
 

@@ -38,7 +38,7 @@ const ActiveAlertsPill = ({ count, to }) =>
   count > 0 ? (
     <Link
       to={to}
-      className="inline-flex h-8 items-center gap-2 rounded-full bg-critical px-3 text-xs font-semibold text-white shadow-xs transition hover:brightness-95"
+      className="inline-flex h-8 items-center gap-2 rounded-full bg-critical px-3 text-xs font-semibold text-white shadow-xs transition-[filter] duration-150 hover:brightness-95"
     >
       <span className="h-2 w-2 animate-pulse-ring rounded-full bg-white" aria-hidden="true" />
       <span className="tabular">{count}</span>

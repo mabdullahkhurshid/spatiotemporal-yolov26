@@ -21,10 +21,12 @@ class Detection:
     y: float
     w: float
     h: float
+    # Score of every class for this box (0–1). The runner-up class explains look-alikes ("other").
+    scores: dict[str, float] | None = None
 
     def to_dict(self) -> dict:
         # Coordinates come from numpy (float32); cast so the payload is JSON serializable.
-        return {
+        out = {
             "className": self.class_name,
             "confidence": round(float(self.confidence) * 100, 2),
             "x": round(float(self.x), 6),
@@ -32,6 +34,9 @@ class Detection:
             "w": round(float(self.w), 6),
             "h": round(float(self.h), 6),
         }
+        if self.scores:
+            out["scores"] = {name: round(float(s) * 100, 2) for name, s in self.scores.items()}
+        return out
 
 
 def _model_class_names(session: ort.InferenceSession) -> list[str] | None:
@@ -164,6 +169,7 @@ class YoloOnnxDetector:
         boxes_xywh = boxes_xywh[mask]
         confidences = confidences[mask]
         class_ids = class_ids[mask]
+        class_scores = class_scores[mask]
 
         if len(boxes_xywh) == 0:
             return []
@@ -190,6 +196,7 @@ class YoloOnnxDetector:
                     y=max(0.0, y1i / orig_h),
                     w=min(1.0, (x2i - x1i) / orig_w),
                     h=min(1.0, (y2i - y1i) / orig_h),
+                    scores=dict(zip(self.class_names, class_scores[idx].tolist())),
                 )
             )
         return detections

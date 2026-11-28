@@ -9,6 +9,7 @@ import { StatGroup } from '../../components/ui/Stat';
 import { StatusBadge } from '../../components/ui/Badge';
 import DataTable, { Pagination } from '../../components/ui/DataTable';
 import { EmptyState, Skeleton } from '../../components/ui/Feedback';
+import ExplainabilityInsights from '../../components/alerts/ExplainabilityInsights';
 import { Select } from '../../components/ui/Field';
 import { cameraTitle } from '../../utils/camera';
 import { formatDate, formatDateTime, formatPercent, formatTime } from '../../utils/format';
@@ -166,7 +167,7 @@ const OrgAdminReports = () => {
     <div className="space-y-6">
       <PageHeader
         title="Reports"
-        description="Fire and smoke incidents tracked by the AI: how strong, how often, and how fast they grew."
+        description="Fire and smoke incidents tracked by the AI: how strong, how often, how fast they grew, and why alerts were raised."
         actions={
           <Button variant="secondary" icon={Download} onClick={exportCsv} disabled={!incidents.length}>
             Export CSV
@@ -276,6 +277,8 @@ const OrgAdminReports = () => {
           )}
         </CardBody>
       </Card>
+
+      <ExplainabilityInsights />
 
       <Card>
         <CardHeader title="Incident log" description="Select an incident to show its spread above." />

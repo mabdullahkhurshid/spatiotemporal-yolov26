@@ -12,7 +12,7 @@ export const CardHeader = ({ title, description, actions, icon: Icon, className,
     <div className="flex min-w-0 items-start gap-2.5">
       {Icon && <Icon size={18} className="mt-0.5 shrink-0 text-fg-subtle" aria-hidden="true" />}
       <div className="min-w-0">
-        <Title id={id} className="text-[0.9375rem] font-semibold text-fg">
+        <Title id={id} className="text-[0.9375rem] font-medium text-fg">
           {title}
         </Title>
         {description && <p className="mt-0.5 text-sm text-fg-muted">{description}</p>}

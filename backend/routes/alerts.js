@@ -9,6 +9,7 @@ const {
   getAlertStats,
   acknowledgeAlert,
 } = require('../controllers/alertController');
+const { getAlertInsights } = require('../controllers/alertInsightsController');
 const { protect, authorize, requireActiveOrganization, requireVerifiedUser, requireActiveSubscription } = require('../middleware/auth');
 const { validateAlert, validate } = require('../middleware/validation');
 
@@ -19,6 +20,7 @@ router.use(requireVerifiedUser);
 router.use(requireActiveSubscription);
 
 router.get('/stats', getAlertStats);
+router.get('/insights', getAlertInsights);
 router.route('/').get(getAlerts).post(validateAlert, validate, createAlert);
 router.route('/:id').get(getAlert);
 router.put('/:id/resolve', authorize('super_admin', 'org_admin', 'operator'), resolveAlert);

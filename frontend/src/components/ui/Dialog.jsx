@@ -35,7 +35,7 @@ export const Dialog = ({ open, onClose, title, description, size = 'md', childre
       >
         <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
           <div className="min-w-0">
-            <h2 id={titleId} className="text-base font-semibold text-fg">
+            <h2 id={titleId} className="text-base font-medium text-fg">
               {title}
             </h2>
             {description && (
@@ -74,7 +74,7 @@ export const Drawer = ({ open, onClose, title, description, children, footer, wi
       >
         <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
           <div className="min-w-0">
-            <h2 id={titleId} className="truncate text-base font-semibold text-fg">
+            <h2 id={titleId} className="truncate text-base font-medium text-fg">
               {title}
             </h2>
             {description && <div className="mt-1 text-sm text-fg-muted">{description}</div>}

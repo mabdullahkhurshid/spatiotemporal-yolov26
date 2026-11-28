@@ -4,9 +4,35 @@ const OperatorCameraAssignment = require('../models/OperatorCameraAssignment');
 const User = require('../models/User');
 const Alert = require('../models/Alert');
 const FireIncident = require('../models/FireIncident');
-const { invalidateCameraAudience } = require('../sockets/emitters');
+const { emitToCameraAudience, invalidateCameraAudience } = require('../sockets/emitters');
 const { OnvifError } = require('../services/onvif');
 const { applyOnvifConnection, onvifConnectionChanged, sendOnvifError } = require('./onvifController');
+const { isDemoType } = require('../utils/demoSource');
+const { checkCameraNow, resumeCamera: resumePausedCamera } = require('../services/cameraHealthMonitor');
+const { stopFeed: stopPreviewFeed } = require('../services/livePreviewHub');
+
+const MAX_PAUSE_MINUTES = 7 * 24 * 60;
+
+const emitCameraStatus = (req, camera) =>
+  emitToCameraAudience(req.io, { organizationId: camera.organizationId, cameraId: camera._id }, 'camera:status:update', {
+    cameraId: camera._id,
+    status: camera.status,
+    pausedUntil: camera.pausedUntil || null,
+  });
+
+/** Camera the signed-in admin may change (super admin: any; org admin: own organization), or null after replying. */
+async function findOwnCamera(req, res) {
+  const camera = await Camera.findById(req.params.id);
+  if (!camera || camera.isDeleted) {
+    res.status(404).json({ success: false, message: 'Camera not found' });
+    return null;
+  }
+  if (req.user.role === 'org_admin' && camera.organizationId.toString() !== req.user.organizationId?.toString()) {
+    res.status(403).json({ success: false, message: 'Not authorized' });
+    return null;
+  }
+  return camera;
+}
 
 // @desc    Get camera usage vs plan limit
 // @route   GET /api/cameras/usage
@@ -161,12 +187,14 @@ exports.createCamera = async (req, res, next) => {
     }
 
     const isOnvif = cameraType === 'onvif';
+    // ONVIF cameras get their address and stream from the device itself (below); demo cameras from MediaMTX.
+    const deviceStream = isOnvif || isDemoType(cameraType);
     const camera = new Camera({
       name: name || label,
       label: label || name,
-      // ONVIF cameras get their address and stream from the device itself (below).
-      ipAddress: isOnvif ? undefined : ipAddress || undefined,
-      streamUrl: isOnvif ? undefined : streamUrl || undefined,
+      ipAddress: deviceStream ? undefined : ipAddress || undefined,
+      streamUrl: deviceStream ? undefined : streamUrl || undefined,
+      demo: cameraType === 'demo_feed' ? { clip: req.body.demo.clip } : undefined,
       location,
       organizationId: orgId,
       installationDate: installationDate ? new Date(installationDate) : undefined,
@@ -198,6 +226,9 @@ exports.createCamera = async (req, res, next) => {
         message: `Camera limit reached. Maximum ${maxCameras} cameras allowed for your plan`,
       });
     }
+
+    // Shows ONLINE as soon as its stream answers, not after the next health cycle.
+    checkCameraNow(req.io, camera._id);
 
     res.status(201).json({
       success: true,
@@ -240,16 +271,26 @@ exports.updateCamera = async (req, res, next) => {
     const { name, label, ipAddress, streamUrl, location, status, installationDate, metadata, cameraType, displayNumber, settings, onvif } = req.body;
     const wasOnvif = camera.cameraType === 'onvif';
     const willBeOnvif = cameraType !== undefined ? cameraType === 'onvif' : wasOnvif;
+    const isDemo = isDemoType(camera.cameraType);
+
+    if (cameraType !== undefined && cameraType !== camera.cameraType && (isDemo || isDemoType(cameraType))) {
+      return res.status(400).json({ success: false, message: 'Demo cameras cannot change connection type' });
+    }
 
     if (name !== undefined) camera.name = name;
     if (label !== undefined) camera.label = label;
-    // ONVIF address and stream come from the device; they are not edited directly.
-    if (!willBeOnvif) {
+    if (camera.cameraType === 'demo_feed' && req.body.demo?.clip !== undefined) camera.demo = { clip: req.body.demo.clip };
+    // ONVIF address and stream come from the device and demo streams from MediaMTX; they are not edited directly.
+    if (!willBeOnvif && !isDemo) {
       if (ipAddress !== undefined) camera.ipAddress = ipAddress;
       if (streamUrl !== undefined) camera.streamUrl = streamUrl;
     }
     if (location !== undefined) camera.location = location;
-    if (status !== undefined) camera.status = status;
+    const previousStatus = camera.status;
+    if (status !== undefined) {
+      camera.status = status;
+      if (status !== 'paused') camera.pausedUntil = null;
+    }
     if (installationDate !== undefined) camera.installationDate = new Date(installationDate);
     if (metadata) camera.metadata = { ...camera.metadata, ...metadata };
     if (cameraType !== undefined) camera.cameraType = cameraType;
@@ -273,6 +314,9 @@ exports.updateCamera = async (req, res, next) => {
     }
 
     await camera.save();
+    if (camera.status !== previousStatus) await emitCameraStatus(req, camera);
+    // Re-check after a stream change or leaving maintenance.
+    checkCameraNow(req.io, camera._id);
 
     res.status(200).json({
       success: true,
@@ -280,6 +324,50 @@ exports.updateCamera = async (req, res, next) => {
     });
   } catch (error) {
     if (error instanceof OnvifError) return sendOnvifError(res, error);
+    next(error);
+  }
+};
+
+// @desc    Pause a camera: no live view, stream checks or fire detection until resumed
+// @route   PUT /api/cameras/:id/pause   body { minutes } (omit for "until resumed")
+// @access  Private (Super Admin, Org Admin)
+exports.pauseCamera = async (req, res, next) => {
+  try {
+    const { minutes } = req.body || {};
+    if (minutes != null && (!Number.isInteger(minutes) || minutes < 1 || minutes > MAX_PAUSE_MINUTES)) {
+      return res.status(400).json({ success: false, message: `Pause length must be 1 to ${MAX_PAUSE_MINUTES} minutes` });
+    }
+    const camera = await findOwnCamera(req, res);
+    if (!camera) return;
+    if (camera.status === 'maintenance') {
+      return res.status(409).json({ success: false, message: 'Turn maintenance off before pausing this camera' });
+    }
+
+    camera.status = 'paused';
+    camera.pausedUntil = minutes ? new Date(Date.now() + minutes * 60 * 1000) : null;
+    await camera.save();
+    stopPreviewFeed(String(camera._id));
+    await emitCameraStatus(req, camera);
+
+    res.status(200).json({ success: true, data: camera });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Resume a paused camera (live again as soon as its stream answers)
+// @route   PUT /api/cameras/:id/resume
+// @access  Private (Super Admin, Org Admin)
+exports.resumeCamera = async (req, res, next) => {
+  try {
+    const camera = await findOwnCamera(req, res);
+    if (!camera) return;
+    if (camera.status !== 'paused') {
+      return res.status(200).json({ success: true, data: camera });
+    }
+    const resumed = await resumePausedCamera(req.io, camera._id);
+    res.status(200).json({ success: true, data: resumed || camera });
+  } catch (error) {
     next(error);
   }
 };
@@ -539,6 +627,7 @@ exports.restoreCamera = async (req, res, next) => {
         message: `Cannot restore camera. Plan limit reached (${maxCameras} cameras). Remove another active camera first.`,
       });
     }
+    checkCameraNow(req.io, camera._id);
 
     res.status(200).json({
       success: true,

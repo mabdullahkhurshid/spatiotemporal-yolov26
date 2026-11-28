@@ -8,6 +8,7 @@ const Notification = require('../models/Notification');
 const AuditLog = require('../models/AuditLog');
 const { sendOperatorWelcomeEmail } = require('../services/emailService');
 const { revokeAllSessions } = require('../utils/sessions');
+const { disconnectUserSockets } = require('../sockets/emitters');
 
 // @desc    Portal account summary (user + org + subscription)
 // @route   GET /api/users/me/account-summary
@@ -353,6 +354,15 @@ exports.updateUser = async (req, res, next) => {
 
     const isSelf = req.params.id === req.user._id.toString();
 
+    // Your own password changes through the reset flow, which proves access to the email and ends
+    // every other session; this endpoint would accept it with only a (possibly stolen) access token.
+    if (isSelf && needsPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'To change your own password, use "Forgot password" on the sign-in page.',
+      });
+    }
+
     // Check access (org admins may edit their own profile and their organization's operators)
     if (req.user.role === 'org_admin' && !isSelf) {
       if (user.organizationId?.toString() !== req.user.organizationId?.toString()) {
@@ -411,6 +421,7 @@ exports.updateUser = async (req, res, next) => {
     // Another admin changed this user's password or deactivated them: end their sessions everywhere.
     if (!isSelf && (needsPassword || isActive === false)) {
       await revokeAllSessions(user._id);
+      disconnectUserSockets(req.io, user._id);
     }
 
     res.status(200).json({
@@ -503,6 +514,7 @@ exports.deleteUser = async (req, res, next) => {
 
     await user.softDelete();
     await revokeAllSessions(user._id);
+    disconnectUserSockets(req.io, user._id);
 
     res.status(200).json({
       success: true,
@@ -596,6 +608,7 @@ exports.suspendUser = async (req, res, next) => {
     user.isActive = false;
     await user.save();
     await revokeAllSessions(user._id);
+    disconnectUserSockets(req.io, user._id);
 
     res.status(200).json({
       success: true,
@@ -672,6 +685,7 @@ exports.resetUserPassword = async (req, res, next) => {
     user.password = req.body.password;
     await user.save();
     await revokeAllSessions(user._id);
+    disconnectUserSockets(req.io, user._id);
 
     res.status(200).json({
       success: true,

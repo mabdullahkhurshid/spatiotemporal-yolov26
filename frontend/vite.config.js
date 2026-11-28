@@ -17,6 +17,12 @@ const vendorChunk = (id) => {
 
 export default defineConfig({
   plugins: [react()],
+  // Charts are only imported by lazy pages (Reports, dashboards). Pre-bundle them at startup so the
+  // first visit to such a page does not trigger a dep re-optimisation, which answers the page's
+  // chunk request with 504 "Outdated Optimize Dep" and crashes the lazy route.
+  optimizeDeps: {
+    include: ['recharts'],
+  },
   build: {
     rollupOptions: {
       output: {

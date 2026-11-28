@@ -10,6 +10,18 @@ export const RESOLUTION_OPTIONS = [
 
 export const RESOLUTION_LABEL = Object.fromEntries(RESOLUTION_OPTIONS.map((o) => [o.value, o.label]).concat([['FALSE_ALARM', 'False alarm']]));
 
+// Values match Alert.falseAlarmCause; these labels train the false-alarm likelihood model.
+export const FALSE_ALARM_CAUSE_OPTIONS = [
+  { value: 'SUNLIGHT_REFLECTION', label: 'Sunlight or reflection' },
+  { value: 'ARTIFICIAL_LIGHT', label: 'Lamp or artificial light' },
+  { value: 'STEAM_FOG_DUST', label: 'Steam, fog or dust' },
+  { value: 'CONTROLLED_FLAME', label: 'Controlled flame', hint: 'Cooking, welding, candles' },
+  { value: 'SCREEN_OR_IMAGE', label: 'Screen or picture' },
+  { value: 'OTHER', label: 'Other' },
+];
+
+export const FALSE_ALARM_CAUSE_LABEL = Object.fromEntries(FALSE_ALARM_CAUSE_OPTIONS.map((o) => [o.value, o.label]));
+
 export const cameraOf = (alert) => (alert?.cameraId && typeof alert.cameraId === 'object' ? alert.cameraId : null);
 
 export const cameraName = (alert) => {

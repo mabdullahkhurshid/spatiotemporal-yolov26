@@ -1,0 +1,14 @@
+# Backend image build context (Dockerfile at the repo root). Keeps secrets and large files out of the image.
+.env
+.env.*
+!.env.example
+.git
+node_modules
+**/node_modules
+frontend
+python-services
+demo_videos
+uploads
+internal_report_docx
+*.pptx
+*.docx

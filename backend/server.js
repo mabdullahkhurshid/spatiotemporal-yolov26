@@ -1,5 +1,4 @@
 const express = require('express');
-const path = require('path');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -8,11 +7,16 @@ const { createServer } = require('http');
 const { Server } = require('socket.io');
 require('dotenv').config();
 
+// Refuse to start with missing or placeholder secrets (strict in production).
+require('./config/env').validateEnv();
+
 const connectDB = require('./config/database');
 const errorHandler = require('./middleware/errorHandler');
 const { rejectMongoOperators } = require('./middleware/sanitize');
 const { apiLimiter } = require('./middleware/rateLimits');
 const handleSocketConnection = require('./sockets/socketHandlers');
+const { parseUploadPath, authorizeMedia, sendUpload } = require('./controllers/mediaController');
+const { stopAllStreams } = require('./controllers/cameraStreamController');
 
 // Connect to database
 connectDB();
@@ -61,10 +65,12 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use('/api/', rejectMongoOperators);
 
-app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
+// Alert media requires the same access as the alert itself (or the inference service key).
+app.get('/uploads/:kind(snapshots|explanations)/:orgId/:file', parseUploadPath, authorizeMedia, sendUpload);
 
 // Routes
 app.use('/api/internal/inference', require('./routes/internalInference'));
+app.use('/api/internal/mediamtx', require('./routes/internalMediamtx'));
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/public', require('./routes/public'));
 app.use('/api/users', require('./routes/users'));
@@ -89,6 +95,8 @@ app.get('/health', (req, res) => {
 
 // Socket.io connection handler
 handleSocketConnection(io);
+// Camera ONLINE/OFFLINE from the camera's stream, independent of the AI service
+require('./services/cameraHealthMonitor').startCameraHealthMonitor(io);
 
 // Error handler (must be last)
 app.use(errorHandler);
@@ -99,8 +107,38 @@ httpServer.listen(PORT, () => {
   console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
 });
 
-// Handle unhandled promise rejections
+// Graceful shutdown: stop accepting work, end live streams and sockets, close the DB, then exit.
+// Open MJPEG streams and sockets would keep httpServer.close() waiting forever, so a timer forces
+// the exit. On a crash the process exits non-zero and the supervisor (Docker restart policy) restarts it.
+const SHUTDOWN_TIMEOUT_MS = 10000;
+let shuttingDown = false;
+
+function shutdown(reason, exitCode) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`Shutting down (${reason})...`);
+
+  setTimeout(() => {
+    console.error('Shutdown timed out; forcing exit');
+    process.exit(exitCode);
+  }, SHUTDOWN_TIMEOUT_MS).unref();
+
+  stopAllStreams();
+  // io.close() disconnects every socket and closes httpServer; the callback runs once it has closed.
+  io.close(async () => {
+    await mongoose.disconnect().catch(() => {});
+    process.exit(exitCode);
+  });
+  httpServer.closeIdleConnections?.();
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM', 0));
+process.on('SIGINT', () => shutdown('SIGINT', 0));
 process.on('unhandledRejection', (err) => {
   console.error('Unhandled Rejection:', err);
-  httpServer.close(() => process.exit(1));
+  shutdown('unhandledRejection', 1);
+});
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+  shutdown('uncaughtException', 1);
 });

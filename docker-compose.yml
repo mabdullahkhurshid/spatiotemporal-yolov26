@@ -5,8 +5,9 @@ services:
     image: mongo:7
     container_name: fire-detection-mongodb
     restart: unless-stopped
+    # Bound to this machine only: the database must never be reachable from the network.
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"
     volumes:
       - mongodb_data:/data/db
     environment:
@@ -20,14 +21,39 @@ services:
       - "5000:5000"
     environment:
       - NODE_ENV=production
-      - MONGODB_URI=mongodb://mongodb:27017/fire-detection-system
+      # Override to add credentials when MongoDB authentication is enabled (see DEPLOYMENT.md).
+      - MONGODB_URI=${MONGODB_URI_DOCKER:-mongodb://mongodb:27017/fire-detection-system}
       - PORT=5000
-      - INFERENCE_SERVICE_API_KEY=${INFERENCE_SERVICE_API_KEY:-change-me-inference-key}
+      # Required secrets: the backend refuses to start in production with missing or placeholder values.
+      - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET in .env (see .env.example)}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:?Set JWT_REFRESH_SECRET in .env (see .env.example)}
+      - CAMERA_CREDENTIALS_KEY=${CAMERA_CREDENTIALS_KEY:-}
+      - INFERENCE_SERVICE_API_KEY=${INFERENCE_SERVICE_API_KEY:?Set INFERENCE_SERVICE_API_KEY in .env (see .env.example)}
+      # 1 when nginx (or another single proxy) is in front; leave empty when clients connect directly.
+      - TRUST_PROXY=${TRUST_PROXY:-}
+      # Optional comma-separated host names cameras may not use as stream addresses (e.g. mongodb,backend).
+      - CAMERA_BLOCKED_HOSTS=${CAMERA_BLOCKED_HOSTS:-}
+      # Queue alert heatmaps for the explainer service below.
+      - XAI_ENABLED=${XAI_ENABLED:-true}
+      # Demo cameras (looping videos, laptop webcam) served by mediamtx below.
+      - DEMO_CAMERAS_ENABLED=${DEMO_CAMERAS_ENABLED:-true}
+      - MEDIAMTX_RTSP_URL=rtsp://mediamtx:8554
+      - MEDIAMTX_WHIP_URL=${MEDIAMTX_WHIP_URL:-http://localhost:8889}
+      - MEDIAMTX_INTERNAL_USER=${MEDIAMTX_INTERNAL_USER:-internal}
+      - MEDIAMTX_INTERNAL_PASS=${MEDIAMTX_INTERNAL_PASS:?Set MEDIAMTX_INTERNAL_PASS in .env (see .env.example)}
     depends_on:
       - mongodb
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     volumes:
       - ./backend:/app/backend
       - ./uploads:/app/uploads
+      # Read on every "Add camera" so the video dropdown lists new files.
+      - ./demo_videos:/app/demo_videos:ro
       - /app/node_modules
 
   inference:
@@ -36,14 +62,64 @@ services:
     restart: unless-stopped
     environment:
       - BACKEND_URL=http://backend:5000
-      - INFERENCE_SERVICE_API_KEY=${INFERENCE_SERVICE_API_KEY:-change-me-inference-key}
+      - INFERENCE_SERVICE_API_KEY=${INFERENCE_SERVICE_API_KEY:?Set INFERENCE_SERVICE_API_KEY in .env (see .env.example)}
       - INFERENCE_MODEL_PATH=/app/weights/best.onnx
       - INFERENCE_FRAME_INTERVAL_MS=500
       - INFERENCE_MAX_CONCURRENT_CAMERAS=4
+      - OPENCV_FFMPEG_CAPTURE_OPTIONS=rtsp_transport;tcp|fflags;nobuffer|flags;low_delay
     depends_on:
       - backend
     volumes:
       - ./python-services/inference/weights:/app/weights:ro
+
+  # Explainable alerts: LayerCAM heatmaps + false-alarm likelihood. Separate from inference so
+  # explanations never slow down live detection; alerts are sent before their heatmap is ready.
+  explainer:
+    build:
+      context: ./python-services/inference
+      dockerfile: Dockerfile.explainer
+    container_name: fire-detection-explainer
+    restart: unless-stopped
+    environment:
+      - BACKEND_URL=http://backend:5000
+      - INFERENCE_SERVICE_API_KEY=${INFERENCE_SERVICE_API_KEY:?Set INFERENCE_SERVICE_API_KEY in .env (see .env.example)}
+      - XAI_TORCH_THREADS=${XAI_TORCH_THREADS:-2}
+    depends_on:
+      - backend
+    volumes:
+      # Read-write so `python -m app.xai.train_risk` can save risk_model.joblib next to the weights.
+      - ./python-services/inference/weights:/app/weights
+    cpus: 2
+
+  # Stream server for demo cameras: RTSP for the backend and inference, WebRTC (WHIP) for browser webcams.
+  mediamtx:
+    image: bluenviron/mediamtx:1.9.3
+    container_name: fire-detection-mediamtx
+    restart: unless-stopped
+    ports:
+      - "8554:8554"
+      - "8889:8889"
+      - "8189:8189/udp"
+      - "8189:8189/tcp"
+    volumes:
+      - ./infra/mediamtx/mediamtx.yml:/mediamtx.yml:ro
+    depends_on:
+      - backend
+
+  # Fake cameras: every demo_videos/<name>.mp4 loops forever at rtsp://mediamtx:8554/demo/<name>.
+  fakecam:
+    build: ./infra/fakecam
+    container_name: fire-detection-fakecam
+    restart: unless-stopped
+    init: true
+    environment:
+      - RTSP_BASE=rtsp://mediamtx:8554
+      - MEDIAMTX_INTERNAL_USER=${MEDIAMTX_INTERNAL_USER:-internal}
+      - MEDIAMTX_INTERNAL_PASS=${MEDIAMTX_INTERNAL_PASS:?Set MEDIAMTX_INTERNAL_PASS in .env (see .env.example)}
+    volumes:
+      - ./demo_videos:/media:ro
+    depends_on:
+      - mediamtx
 
 volumes:
   mongodb_data:

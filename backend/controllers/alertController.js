@@ -1,4 +1,5 @@
 const Alert = require('../models/Alert');
+const { FALSE_ALARM_CAUSES } = require('../models/Alert');
 const Camera = require('../models/Camera');
 const User = require('../models/User');
 const OperatorCameraAssignment = require('../models/OperatorCameraAssignment');
@@ -274,6 +275,13 @@ exports.resolveAlert = async (req, res, next) => {
 // @access  Private (Super Admin, Org Admin, Operator for assigned cameras)
 exports.markFalseAlarm = async (req, res, next) => {
   const resolutionNote = req.body.note || 'Marked as false alarm';
+  const { cause } = req.body;
+  if (cause !== undefined && !FALSE_ALARM_CAUSES.includes(cause)) {
+    return res.status(400).json({
+      success: false,
+      message: `Invalid false alarm cause. Use one of: ${FALSE_ALARM_CAUSES.join(', ')}`,
+    });
+  }
 
   return transitionAlert(req, res, next, {
     fromStatuses: OPEN_STATUSES,
@@ -284,6 +292,7 @@ exports.markFalseAlarm = async (req, res, next) => {
       resolutionType: 'FALSE_ALARM',
       resolutionNote,
       isFalseAlarm: true,
+      ...(cause ? { falseAlarmCause: cause } : {}),
     },
     action: { type: 'FALSE_ALARM', note: resolutionNote },
     events: (alert) => [

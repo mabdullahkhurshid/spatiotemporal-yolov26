@@ -34,6 +34,8 @@ coverage/
 # ML weights & inference artifacts
 python-services/inference/weights/*.pt
 python-services/inference/weights/*.onnx
+# Trained from customer alert outcomes
+python-services/inference/weights/*.joblib
 python-services/inference/.venv/
 
 # Alert snapshots
@@ -42,3 +44,9 @@ uploads/
 # Python
 __pycache__/
 *.pyc
+
+# Academic report, presentation and media assets (kept local)
+internal_report_docx/
+report_figures/
+unslop-story/
+*.pptx

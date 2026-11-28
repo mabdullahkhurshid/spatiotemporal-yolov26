@@ -9,7 +9,7 @@ const ProfileHero = ({ name, email, avatar, role, actions, children }) => (
     <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
       <Avatar name={name} email={email} src={avatar} size="xl" className="ring-4 ring-surface-2" />
       <div className="min-w-0 flex-1">
-        <h2 className="break-words text-xl font-semibold text-fg">{name || '—'}</h2>
+        <h2 className="break-words text-xl font-medium text-fg">{name || '—'}</h2>
         <p className="mt-0.5 break-all text-sm text-fg-muted">{email || '—'}</p>
         <Badge tone="brand" className="mt-2">
           {roleLabel(role)}

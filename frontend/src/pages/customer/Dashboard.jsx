@@ -78,7 +78,6 @@ const Dashboard = () => {
 
   if (loadingSummary) return <DashboardSkeleton />;
 
-  const firstName = user?.name?.split(' ')[0] || 'there';
   const hasOrg = summary?.flags?.hasOrganization;
   const { organization, subscription, usage, flags } = summary || {};
   const planName = subscription?.planDetails?.name || subscription?.plan || organization?.subscriptionPlan;
@@ -88,8 +87,8 @@ const Dashboard = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        title={`Welcome back, ${firstName}`}
-        description={hasOrg ? `Account overview for ${organization?.name}.` : 'Set up FireGuard AI for your site in three steps.'}
+        title={hasOrg ? organization?.name || 'Account overview' : 'Set up your site'}
+        description={hasOrg ? 'Account overview' : 'Three steps to monitoring your cameras with FireGuard AI'}
         actions={
           hasOrg && flags?.hasActiveSubscription ? (
             <Button as={Link} to="/orgadmin/dashboard" iconRight={ArrowRight}>

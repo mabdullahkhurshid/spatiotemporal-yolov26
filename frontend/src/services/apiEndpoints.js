@@ -54,6 +54,16 @@ export const assignOperatorsToCamera = (cameraId, operatorIds, replace = true) =
   api.put(`/cameras/${cameraId}/operators`, { operatorIds, replace });
 export const restoreCamera = (id) => api.put(`/cameras/${id}/restore`);
 export const permanentDeleteCamera = (id) => api.delete(`/cameras/${id}/permanent`);
+// minutes omitted: paused until resumed
+export const pauseCamera = (id, minutes) => api.put(`/cameras/${id}/pause`, minutes ? { minutes } : {});
+export const resumeCamera = (id) => api.put(`/cameras/${id}/resume`);
+
+// Demo cameras (looping demo videos, laptop webcam)
+export const getDemoFeeds = () => api.get('/cameras/demo-feeds');
+export const getCameraPublishToken = (id) => api.get(`/cameras/${id}/publish-token`);
+
+// Explainable AI insights (Reports)
+export const getAlertInsights = (params) => api.get('/alerts/insights', { params });
 
 // Incidents (AI)
 export const getIncidents = (params) => api.get('/incidents', { params });

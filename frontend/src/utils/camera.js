@@ -1,6 +1,8 @@
 export const isCameraOnline = (status) =>
   status === 'ONLINE' || status === 'online';
 
+export const isCameraPaused = (status) => status === 'paused';
+
 export const normalizeCameraId = (id) => (id == null ? '' : String(id));
 
 export const findCameraById = (cameras, id) => {

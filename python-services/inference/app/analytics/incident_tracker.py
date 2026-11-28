@@ -14,6 +14,11 @@ class IncidentState:
     last_alert_at_ms: int = 0
     detection_timestamps: list[int] = field(default_factory=list)
     area_samples: list[dict] = field(default_factory=list)
+    # Peaks of the current run of positive frames; sent with an alert as the evidence that confirmed it.
+    streak_frames: list[dict] = field(default_factory=list)
+
+
+MAX_EVIDENCE_FRAMES = 10
 
 
 class IncidentTracker:
@@ -78,8 +83,12 @@ class IncidentTracker:
             self.state.area_samples.append({"t": now_ms, "area": area})
             if len(self.state.area_samples) > 120:
                 self.state.area_samples = self.state.area_samples[-120:]
+            fire_peak, smoke_peak = self._class_peaks(detections)
+            self.state.streak_frames.append({"t": now_ms, "fire": fire_peak, "smoke": smoke_peak, "area": round(area, 6)})
+            self.state.streak_frames = self.state.streak_frames[-MAX_EVIDENCE_FRAMES:]
         else:
             self.state.consecutive = 0
+            self.state.streak_frames = []
             if (
                 self.state.active
                 and self.state.last_seen_at_ms
@@ -114,5 +123,20 @@ class IncidentTracker:
             self.state.last_alert_at_ms = now_ms
             metrics["createAlert"] = True
             metrics["averageConfidence"] = max(fire_conf, smoke_conf)
+            metrics["evidence"] = self._evidence()
 
         return metrics
+
+    def _evidence(self) -> dict:
+        """The rule and the confirming frames behind an alert (decision trace for explanations)."""
+        frames = list(self.state.streak_frames)
+        peaks = [max(f["fire"], f["smoke"]) for f in frames]
+        return {
+            "rule": "consecutive_frames",
+            "alertClasses": sorted(self.alert_classes),
+            "minConsecutive": self.min_consecutive,
+            "cooldownMs": self.alert_cooldown_ms,
+            "consecutiveFrames": self.state.consecutive,
+            "streakMeanConfidence": round(sum(peaks) / len(peaks), 2) if peaks else 0.0,
+            "frames": frames,
+        }

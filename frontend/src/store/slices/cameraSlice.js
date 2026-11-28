@@ -111,12 +111,15 @@ const cameraSlice = createSlice({
       }
     },
     updateCameraStatus: (state, action) => {
-      const { cameraId, status, lastActivity } = action.payload;
+      const { cameraId, status, ...rest } = action.payload;
       const targetId = cameraId != null ? String(cameraId) : '';
       const camera = state.cameras.find((c) => String(c._id) === targetId);
       if (camera) {
         camera.status = status;
-        camera.lastActivity = lastActivity;
+        // Only fields the event carries (a pause event has no lastActivity, a heartbeat no pausedUntil).
+        ['lastActivity', 'lastHeartbeat', 'pausedUntil'].forEach((key) => {
+          if (key in rest) camera[key] = rest[key];
+        });
       }
     },
   },

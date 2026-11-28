@@ -3,7 +3,8 @@ import CameraTile from './CameraTile';
 import { Skeleton, EmptyState } from '../ui/Feedback';
 import Card from '../ui/Card';
 
-const DEFAULT_COLUMNS = 'grid-cols-1 min-[480px]:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4';
+// Small live tiles (as in the earlier camera wall); click a tile for the larger viewer.
+const DEFAULT_COLUMNS = 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5';
 
 const CameraGridSkeleton = ({ columnsClassName, count = 4 }) => (
   <div className={`grid gap-4 ${columnsClassName}`} aria-hidden="true">

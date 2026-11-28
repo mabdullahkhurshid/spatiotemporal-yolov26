@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { CheckCircle2 } from 'lucide-react';
+import { Check } from 'lucide-react';
 import Logo from '../ui/Logo';
 
 const POINTS = [
@@ -19,7 +19,7 @@ const AuthLayout = ({ title, description, children, footer }) => (
         <Logo />
       </Link>
       <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center py-10">
-        <h1 className="text-2xl font-semibold tracking-tight text-fg">{title}</h1>
+        <h1 className="text-2xl font-medium text-fg">{title}</h1>
         {description && <p className="mt-2 text-sm text-fg-muted">{description}</p>}
         <div className="mt-8">{children}</div>
         {footer && <div className="mt-8 text-center text-sm text-fg-muted">{footer}</div>}
@@ -28,13 +28,12 @@ const AuthLayout = ({ title, description, children, footer }) => (
     </div>
 
     <aside aria-hidden="true" className="relative hidden flex-1 overflow-hidden bg-[#0B111D] lg:flex lg:items-center lg:justify-center">
-      <div className="absolute inset-0 opacity-[0.05] [background-image:linear-gradient(#fff_1px,transparent_1px),linear-gradient(90deg,#fff_1px,transparent_1px)] [background-size:48px_48px]" />
       <div className="relative max-w-md px-12">
-        <p className="text-3xl font-semibold leading-tight tracking-tight text-white">Every camera, watched. Every alert, owned.</p>
+        <p className="text-3xl font-medium leading-tight tracking-[-0.02em] text-white">Every camera watched, every alert owned</p>
         <ul className="mt-8 space-y-4">
           {POINTS.map((p) => (
             <li key={p} className="flex items-start gap-3 text-sm text-white/75">
-              <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-emerald-400" />
+              <Check size={16} strokeWidth={1.75} className="mt-0.5 shrink-0 text-white/45" />
               {p}
             </li>
           ))}

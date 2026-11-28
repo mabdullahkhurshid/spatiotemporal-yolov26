@@ -67,7 +67,7 @@ const Sidebar = ({ user, open, onClose, activeAlerts }) => {
 
         {orgName && (
           <div className="mx-3 mb-2 rounded-md border border-sidebar-line px-3 py-2.5">
-            <p className="text-2xs font-medium uppercase tracking-[0.08em] text-sidebar-muted">Organization</p>
+            <p className="text-xs text-sidebar-muted">Organization</p>
             <p className="mt-0.5 truncate text-sm font-medium text-sidebar-fg" title={orgName}>
               {orgName}
             </p>
@@ -76,8 +76,8 @@ const Sidebar = ({ user, open, onClose, activeAlerts }) => {
 
         <nav className="flex-1 overflow-y-auto px-3 pb-4 scrollbar-thin" aria-label="Main navigation">
           {groups.map((group) => (
-            <div key={group.label} className="mt-4 first:mt-2">
-              <p className="mb-1.5 px-3 text-2xs font-semibold uppercase tracking-[0.1em] text-sidebar-muted/80">{group.label}</p>
+            <div key={group.label} className="mt-6 first:mt-2">
+              <p className="mb-2 px-3 text-xs font-medium text-sidebar-muted">{group.label}</p>
               <ul className="space-y-0.5">
                 {group.items.map((item) => (
                   <NavItem key={item.to} item={item} active={isNavItemActive(item, pathname)} activeAlerts={activeAlerts} onNavigate={onClose} />

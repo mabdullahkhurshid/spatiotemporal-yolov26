@@ -1,7 +1,7 @@
 import { io } from 'socket.io-client';
 import { store } from '../store/store';
 import { addAlert, updateAlert } from '../store/slices/alertSlice';
-import { setLiveDetection, updateCameraStatus } from '../store/slices/cameraSlice';
+import { fetchCameras, setLiveDetection, updateCameraStatus } from '../store/slices/cameraSlice';
 import { addNotification } from '../store/slices/notificationSlice';
 import { getAccessToken } from './tokenStore';
 import { refreshAccessToken } from './api';
@@ -9,6 +9,7 @@ import { refreshAccessToken } from './api';
 class SocketService {
   constructor() {
     this.socket = null;
+    this.readyCallbacks = new Set();
   }
 
   connect(token) {
@@ -30,13 +31,20 @@ class SocketService {
       transports: ['websocket', 'polling'],
       withCredentials: true,
     });
+    const waiting = [...this.readyCallbacks];
+    this.readyCallbacks.clear();
+    waiting.forEach((callback) => callback(this.socket));
 
     this.authRetried = false;
 
+    let connectedBefore = false;
     this.socket.on('connect', () => {
       console.log('Socket connected');
       this.authRetried = false;
       this.joinCurrentOrganization();
+      // Status changes while disconnected (e.g. a server restart) were missed: reload the cameras shown.
+      if (connectedBefore && store.getState().cameras.cameras.length) store.dispatch(fetchCameras());
+      connectedBefore = true;
     });
 
     // Access tokens are short-lived; a reconnect after expiry is rejected, so refresh once and retry.
@@ -82,6 +90,12 @@ class SocketService {
       store.dispatch(updateAlert({ _id: data.alertId, status: data.status }));
     });
 
+    // Heatmap / false-alarm likelihood from the explainer arrives a few seconds after alert:new.
+    this.socket.on('alert:explained', (data) => {
+      if (!data?.alertId || !data.explanation) return;
+      store.dispatch(updateAlert({ _id: data.alertId, explanation: data.explanation }));
+    });
+
     // Camera status events
     this.socket.on('camera:status:update', (data) => {
       store.dispatch(updateCameraStatus(data));
@@ -98,6 +112,16 @@ class SocketService {
         })
       );
     });
+  }
+
+  /** Runs `callback(socket)` now if connected-or-connecting, else once connect() creates the socket. */
+  whenReady(callback) {
+    if (this.socket) {
+      callback(this.socket);
+      return () => {};
+    }
+    this.readyCallbacks.add(callback);
+    return () => this.readyCallbacks.delete(callback);
   }
 
   disconnect() {

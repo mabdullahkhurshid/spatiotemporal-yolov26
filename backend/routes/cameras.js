@@ -7,6 +7,8 @@ const {
   updateCamera,
   deleteCamera,
   updateCameraActivity,
+  pauseCamera,
+  resumeCamera,
   getCameraUsage,
   assignOperatorsToCamera,
   getDeletedCameras,
@@ -14,6 +16,7 @@ const {
   permanentDeleteCamera,
 } = require('../controllers/cameraController');
 const { streamMjpeg, streamAuth, issueStreamToken } = require('../controllers/cameraStreamController');
+const { getDemoFeeds, issuePublishToken } = require('../controllers/demoCameraController');
 const { discoverOnvif, probeOnvif, refreshOnvifCamera } = require('../controllers/onvifController');
 const { onvifLimiter } = require('../middleware/rateLimits');
 const {
@@ -47,6 +50,9 @@ router.route('/').get(getCameras).post(authorize('super_admin', 'org_admin'), va
 
 router.get('/usage', authorize('org_admin'), getCameraUsage);
 
+router.get('/demo-feeds', authorize('super_admin', 'org_admin'), getDemoFeeds);
+router.get('/:id/publish-token', authorize('org_admin'), issuePublishToken);
+
 router.get('/deleted', authorize('super_admin', 'org_admin'), getDeletedCameras);
 
 router.post('/onvif/discover', authorize('super_admin', 'org_admin'), onvifLimiter, discoverOnvif);
@@ -56,6 +62,9 @@ router.post('/:id/onvif/refresh', authorize('super_admin', 'org_admin'), onvifLi
 router.get('/:id/stream-token', issueStreamToken);
 
 router.route('/:id/activity').put(updateCameraActivity);
+
+router.put('/:id/pause', authorize('super_admin', 'org_admin'), pauseCamera);
+router.put('/:id/resume', authorize('super_admin', 'org_admin'), resumeCamera);
 
 router.put('/:id/operators', authorize('org_admin'), assignOperatorsToCamera);
 

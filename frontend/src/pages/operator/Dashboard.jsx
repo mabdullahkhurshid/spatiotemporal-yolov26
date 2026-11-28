@@ -87,7 +87,7 @@ const OperatorDashboard = () => {
 
       <section aria-labelledby="my-cameras">
         <div className="mb-3 flex items-center justify-between">
-          <h2 id="my-cameras" className="text-[0.9375rem] font-semibold text-fg">
+          <h2 id="my-cameras" className="text-[0.9375rem] font-medium text-fg">
             Your cameras
           </h2>
           <Button as={Link} to="/operator/cameras" variant="link" size="sm" iconRight={ArrowRight}>

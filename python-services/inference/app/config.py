@@ -49,5 +49,20 @@ class Settings(BaseSettings):
 
     alert_classes: str = "fire,smoke"
 
+    # Explainer process (python -m app.xai.main). best.pt holds the same weights as best.onnx.
+    xai_model_path: str = Field(
+        default=str(_INFERENCE_ROOT / "weights" / "best.pt"), validation_alias="XAI_MODEL_PATH"
+    )
+    xai_risk_model_path: str = Field(
+        default=str(_INFERENCE_ROOT / "weights" / "risk_model.joblib"), validation_alias="XAI_RISK_MODEL_PATH"
+    )
+    xai_poll_ms: int = Field(default=3000, validation_alias="XAI_POLL_MS")
+    xai_torch_threads: int = Field(default=2, validation_alias="XAI_TORCH_THREADS")
+    xai_max_targets: int = Field(default=3, validation_alias="XAI_MAX_TARGETS")
+    # Retrain the false-alarm model from operator outcomes this often (0 = only on start-up / by hand).
+    xai_retrain_hours: float = Field(default=24, validation_alias="XAI_RETRAIN_HOURS")
+    xai_min_samples: int = Field(default=150, validation_alias="XAI_MIN_SAMPLES")
+    xai_min_per_class: int = Field(default=30, validation_alias="XAI_MIN_PER_CLASS")
+
 
 settings = Settings()

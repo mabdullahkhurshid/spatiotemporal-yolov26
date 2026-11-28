@@ -47,4 +47,13 @@ async function emitToCameraAudience(io, { organizationId, cameraId }, event, pay
   io.to(rooms).emit(event, payload);
 }
 
-module.exports = { emitToCameraAudience, invalidateCameraAudience, SUPER_ADMIN_ROOM };
+/**
+ * Ends every open socket of a user (every socket joins user:<id> on connect). Call it whenever the
+ * user's sessions are revoked or the account is deactivated, so live alerts stop immediately.
+ */
+const disconnectUserSockets = (io, userId) => {
+  if (!io || !userId) return;
+  io.in(`user:${userId}`).disconnectSockets(true);
+};
+
+module.exports = { emitToCameraAudience, invalidateCameraAudience, disconnectUserSockets, SUPER_ADMIN_ROOM };

@@ -26,6 +26,8 @@ const TEST_ENV = {
   ONVIF_RATE_LIMIT_MAX: '100000',
   ONVIF_TIMEOUT_MS: '3000',
   CAMERA_ALLOW_LOCAL_SOURCES: 'false',
+  // Off unless a test opts in, whatever the developer's .env says.
+  XAI_ENABLED: 'false',
   FRONTEND_URL: 'http://localhost:5173',
   SOCKET_CORS_ORIGIN: 'http://localhost:5173',
   GOOGLE_CLIENT_ID: 'test-google-client',

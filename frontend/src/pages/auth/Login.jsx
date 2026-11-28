@@ -134,7 +134,7 @@ const Login = () => {
   return (
     <AuthLayout
       title="Sign in"
-      description="Welcome back. Sign in to your FireGuard AI account."
+      description="Use your FireGuard AI account to open your cameras and alerts."
       footer={
         <>
           New to FireGuard AI?{' '}

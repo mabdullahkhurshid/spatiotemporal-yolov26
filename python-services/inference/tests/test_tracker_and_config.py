@@ -28,6 +28,33 @@ class TrackerTests(unittest.TestCase):
         self.assertTrue(metrics.get("createAlert"))
         self.assertEqual(metrics["fireConfidence"], 88.0)
 
+    def test_alert_carries_the_confirming_frames_as_evidence(self):
+        t = make_tracker()
+        now = 1_000_000
+        smoke = {**FIRE, "className": "smoke", "confidence": 60.0}
+        t.update([OTHER], now - 500)
+        t.update([FIRE], now)
+        t.update([FIRE, smoke], now + 500)
+        metrics = t.update([{**FIRE, "confidence": 70.0}], now + 1000)
+        evidence = metrics["evidence"]
+        self.assertEqual(evidence["rule"], "consecutive_frames")
+        self.assertEqual(evidence["alertClasses"], ["fire", "smoke"])
+        self.assertEqual(evidence["minConsecutive"], 3)
+        self.assertEqual(evidence["consecutiveFrames"], 3)
+        self.assertEqual([f["t"] for f in evidence["frames"]], [now, now + 500, now + 1000])
+        self.assertEqual(evidence["frames"][1]["smoke"], 60.0)
+        # True mean of the per-frame peaks, unlike averageConfidence (peak of the alert frame).
+        self.assertAlmostEqual(evidence["streakMeanConfidence"], (88 + 88 + 70) / 3, places=2)
+        self.assertEqual(metrics["averageConfidence"], 70.0)
+
+    def test_gap_clears_the_evidence_frames(self):
+        t = make_tracker()
+        now = 1_000_000
+        t.update([FIRE], now)
+        t.update([], now + 500)
+        self.assertEqual(t.state.streak_frames, [])
+        self.assertNotIn("evidence", t.update([FIRE], now + 1000))
+
     def test_gap_resets_consecutive_count(self):
         t = make_tracker()
         now = 1_000_000

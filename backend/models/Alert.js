@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 
+const FALSE_ALARM_CAUSES = ['SUNLIGHT_REFLECTION', 'ARTIFICIAL_LIGHT', 'STEAM_FOG_DUST', 'CONTROLLED_FLAME', 'SCREEN_OR_IMAGE', 'OTHER'];
+
 const alertSchema = new mongoose.Schema(
   {
     cameraId: {
@@ -92,6 +94,12 @@ const alertSchema = new mongoose.Schema(
         y: Number,
         w: Number,
         h: Number,
+        // Model score of every class for this box (0–100)
+        scores: {
+          fire: Number,
+          smoke: Number,
+          other: Number,
+        },
       },
     ],
     metricsSnapshot: {
@@ -107,6 +115,87 @@ const alertSchema = new mongoose.Schema(
     isFalseAlarm: {
       type: Boolean,
       default: false,
+    },
+    // What triggered a false alarm (operator feedback; labels for the false-alarm model)
+    falseAlarmCause: {
+      type: String,
+      enum: FALSE_ALARM_CAUSES,
+    },
+    // Why the alert was raised (services/alertExplanation.js) and, asynchronously, what the model looked at
+    explanation: {
+      version: Number,
+      decision: {
+        rule: String,
+        alertClasses: [String],
+        confThreshold: Number,
+        minConsecutive: Number,
+        frameIntervalMs: Number,
+        cooldownMs: Number,
+        consecutiveFrames: Number,
+        streakMeanConfidence: Number,
+        frames: [
+          {
+            _id: false,
+            t: Date,
+            fire: Number,
+            smoke: Number,
+            area: Number,
+          },
+        ],
+        severity: {
+          level: String,
+          basis: { type: String, enum: ['peak_confidence', 'provided'] },
+          value: Number,
+          thresholds: { critical: Number, high: Number, medium: Number },
+        },
+        coverage: Number,
+        spreadRatePerSec: Number,
+        detectionFrequencyPerMin: Number,
+      },
+      reasons: [
+        {
+          _id: false,
+          code: String,
+          text: String,
+        },
+      ],
+      // LayerCAM heatmap produced by the explainer process
+      visual: {
+        status: { type: String, enum: ['pending', 'processing', 'ready', 'failed', 'skipped'] },
+        method: String,
+        heatmapURL: String,
+        targets: [
+          {
+            _id: false,
+            boxIndex: Number,
+            className: String,
+            confidence: Number,
+            focusInBox: Number,
+            peak: { x: Number, y: Number },
+          },
+        ],
+        claimedAt: Date,
+        completedAt: Date,
+        durationMs: Number,
+        modelInfo: String,
+        error: String,
+      },
+      // Advisory false-alarm likelihood with SHAP contributions (never changes severity or suppresses alerts)
+      risk: {
+        probability: Number,
+        level: { type: String, enum: ['low', 'medium', 'high'] },
+        modelVersion: String,
+        contributions: [
+          {
+            _id: false,
+            feature: String,
+            label: String,
+            value: Number,
+            impact: Number,
+          },
+        ],
+        computedAt: Date,
+      },
     },
     // Action history for audit trail
     actions: [
@@ -147,4 +236,8 @@ alertSchema.index({ organizationId: 1, timestamp: -1 });
 // Compound index for efficient queries
 alertSchema.index({ organizationId: 1, status: 1, timestamp: -1 });
 
+// Explainer job queue (only alerts waiting for or being given a heatmap carry a status).
+alertSchema.index({ 'explanation.visual.status': 1, 'explanation.visual.claimedAt': 1 }, { sparse: true });
+
 module.exports = mongoose.model('Alert', alertSchema);
+module.exports.FALSE_ALARM_CAUSES = FALSE_ALARM_CAUSES;

@@ -42,7 +42,7 @@ const UserMenu = ({ user }) => {
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-fg">{user?.name || 'Account'}</p>
             <p className="truncate text-xs text-fg-muted">{user?.email}</p>
-            <p className="mt-0.5 text-2xs font-medium uppercase tracking-wide text-fg-subtle">{ROLE_LABEL[user?.role] || user?.role}</p>
+            <p className="mt-0.5 text-xs text-fg-subtle">{ROLE_LABEL[user?.role] || user?.role}</p>
           </div>
         </div>
       }

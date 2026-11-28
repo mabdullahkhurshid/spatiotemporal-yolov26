@@ -42,7 +42,7 @@ const Stat = ({ label, value, hint, tone, to, loading, icon: Icon }) => {
       {loading ? (
         <Skeleton className="mt-2 h-7 w-16" />
       ) : (
-        <p className={cn('tabular mt-1.5 text-2xl font-semibold leading-8 tracking-tight', (tone && Number(value) > 0 && TONE_VALUE[tone]) || 'text-fg')}>
+        <p className={cn('tabular mt-1.5 text-2xl font-medium leading-8', (tone && Number(value) > 0 && TONE_VALUE[tone]) || 'text-fg')}>
           {value}
         </p>
       )}

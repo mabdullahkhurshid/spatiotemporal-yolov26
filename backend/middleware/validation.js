@@ -1,5 +1,6 @@
 const { body, validationResult } = require("express-validator");
-const { checkStreamSource } = require("../utils/streamSource");
+const { checkStreamSource, checkStreamHost } = require("../utils/streamSource");
+const { isDemoType, demoCamerasEnabled, listDemoClips } = require("../utils/demoSource");
 
 // Validation result handler
 exports.validate = (req, res, next) => {
@@ -91,12 +92,12 @@ exports.validateCamera = [
   body("label").optional().trim(),
   body("cameraType")
     .optional()
-    .isIn(["ip_rtsp", "http_mjpeg", "onvif"])
+    .isIn(["ip_rtsp", "http_mjpeg", "onvif", "demo_feed", "webcam"])
     .withMessage("Invalid camera type"),
   body("displayNumber").optional().trim(),
   body("streamUrl").optional().trim(),
   body("location").trim().notEmpty().withMessage("Camera location is required"),
-  (req, res, next) => {
+  async (req, res, next) => {
     if (!req.body.name && !req.body.label) {
       return res.status(400).json({
         success: false,
@@ -128,6 +129,20 @@ exports.validateCamera = [
       }
     }
 
+    // Demo cameras get their stream from the server's MediaMTX; IP and stream URL are ignored.
+    if (isDemoType(cameraType)) {
+      if (!demoCamerasEnabled()) {
+        return fail("Demo cameras are disabled on this server", "cameraType");
+      }
+      const clip = req.body.demo?.clip;
+      if (cameraType === "demo_feed" && (req.method === "POST" || clip !== undefined)) {
+        if (typeof clip !== "string" || !listDemoClips().includes(clip)) {
+          return fail("Choose a video from the demo videos folder", "demo.clip");
+        }
+      }
+      return next();
+    }
+
     if (cameraType === "ip_rtsp") {
       const ip = req.body.ipAddress?.trim();
       if (!ip || !IP_ADDRESS_REGEX.test(ip)) {
@@ -152,11 +167,13 @@ exports.validateCamera = [
 
     if (req.body.streamUrl !== undefined) {
       const source = checkStreamSource(req.body.streamUrl);
-      if (!source.ok) {
+      // checkStreamHost never throws (DNS failures are allowed), so this async step cannot reject.
+      const host = source.ok ? await checkStreamHost(req.body.streamUrl) : source;
+      if (!host.ok) {
         return res.status(400).json({
           success: false,
-          message: source.message,
-          errors: [{ msg: source.message, path: "streamUrl" }],
+          message: host.message,
+          errors: [{ msg: host.message, path: "streamUrl" }],
         });
       }
     }

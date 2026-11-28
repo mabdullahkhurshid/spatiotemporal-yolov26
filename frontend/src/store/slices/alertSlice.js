@@ -28,9 +28,9 @@ export const resolveAlert = createAsyncThunk('alerts/resolve', async ({ id, note
   }
 });
 
-export const markFalseAlarm = createAsyncThunk('alerts/falseAlarm', async ({ id, note }, { rejectWithValue }) => {
+export const markFalseAlarm = createAsyncThunk('alerts/falseAlarm', async ({ id, note, cause }, { rejectWithValue }) => {
   try {
-    const response = await api.put(`/alerts/${id}/false-alarm`, { note });
+    const response = await api.put(`/alerts/${id}/false-alarm`, { note, cause });
     return response.data.data;
   } catch (error) {
     return rejectWithValue(error.response?.data?.message || 'Failed to mark false alarm');

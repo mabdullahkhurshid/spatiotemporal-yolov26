@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import { getUsers, getOperatorAssignments, assignOperatorsToCamera, refreshOnvifCamera } from '../../services/apiEndpoints';
 import { cameraReplaced } from '../../store/slices/cameraSlice';
 import { formatRelative } from '../../utils/format';
-import { cameraTitle, normalizeCameraId } from '../../utils/camera';
+import { cameraTitle, isCameraPaused, normalizeCameraId } from '../../utils/camera';
 import { Drawer } from '../ui/Dialog';
 import Button from '../ui/Button';
 import { Field, Input, Switch, Textarea } from '../ui/Field';
@@ -13,14 +13,15 @@ import { useConfirm } from '../ui/confirmContext';
 import CameraOperatorPicker from './CameraOperatorPicker';
 import OnvifConnectFields from './OnvifConnectFields';
 import { emptyOnvifValue } from '../../utils/onvif';
+import { pausedLabel, useCameraPause } from '../../hooks/useCameraPause';
 
-const TYPE_LABEL = { ip_rtsp: 'IP / RTSP', http_mjpeg: 'HTTP MJPEG', onvif: 'ONVIF' };
+const TYPE_LABEL = { ip_rtsp: 'IP / RTSP', http_mjpeg: 'HTTP MJPEG', onvif: 'ONVIF', demo_feed: 'Demo video (looping)', webcam: 'Laptop camera' };
 
 const Section = ({ title, description, children, action }) => (
   <section className="space-y-4">
     <div className="flex items-start justify-between gap-3">
       <div>
-        <h3 className="text-sm font-semibold text-fg">{title}</h3>
+        <h3 className="text-sm font-medium text-fg">{title}</h3>
         {description && <p className="mt-0.5 text-xs text-fg-muted">{description}</p>}
       </div>
       {action}
@@ -40,6 +41,7 @@ const CameraSettingsDrawer = ({ camera, open, onClose, onSave, onDelete, saving 
   const [selectedOperatorIds, setSelectedOperatorIds] = useState([]);
   const [operatorsLoading, setOperatorsLoading] = useState(false);
   const [assignSaving, setAssignSaving] = useState(false);
+  const { busy: pauseBusy, pause, resume } = useCameraPause(camera || {});
 
   useEffect(() => {
     if (!open || !camera) return;
@@ -68,6 +70,7 @@ const CameraSettingsDrawer = ({ camera, open, onClose, onSave, onDelete, saving 
         detectionEnabled: camera.settings?.detectionEnabled !== false,
         notes: camera.settings?.notes || '',
       },
+      maintenance: camera.status === 'maintenance',
     });
 
     const loadOperators = async () => {
@@ -88,7 +91,10 @@ const CameraSettingsDrawer = ({ camera, open, onClose, onSave, onDelete, saving 
       }
     };
     loadOperators();
-  }, [open, camera]);
+    // Only when the drawer opens or shows another camera: the camera object is replaced on every live
+    // detection, and re-running then would throw away unsaved edits (toggles flipped back by themselves).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, camera?._id]);
 
   if (!open || !camera || !form) return null;
 
@@ -97,6 +103,7 @@ const CameraSettingsDrawer = ({ camera, open, onClose, onSave, onDelete, saving 
   const setSetting = (field, value) => setForm((prev) => ({ ...prev, settings: { ...prev.settings, [field]: value } }));
 
   const isOnvif = form.cameraType === 'onvif';
+  const isDemo = form.cameraType === 'demo_feed' || form.cameraType === 'webcam';
   const ipRequired = form.cameraType === 'ip_rtsp';
   const streamRequired = form.cameraType === 'http_mjpeg';
 
@@ -119,10 +126,12 @@ const CameraSettingsDrawer = ({ camera, open, onClose, onSave, onDelete, saving 
               profileToken: onvif.profileToken || undefined,
             },
           }
-        : {
-            ipAddress: form.ipAddress.trim() || undefined,
-            streamUrl: form.streamUrl.trim() || undefined,
-          }),
+        : isDemo
+          ? {}
+          : {
+              ipAddress: form.ipAddress.trim() || undefined,
+              streamUrl: form.streamUrl.trim() || undefined,
+            }),
       metadata: {
         model: form.metadata.model.trim() || undefined,
         resolution: form.metadata.resolution.trim() || undefined,
@@ -132,6 +141,12 @@ const CameraSettingsDrawer = ({ camera, open, onClose, onSave, onDelete, saving 
         detectionEnabled: form.settings.detectionEnabled,
         notes: form.settings.notes.trim() || undefined,
       },
+      // Leaving maintenance: OFFLINE until the server's stream check marks it ONLINE (seconds).
+      ...(form.maintenance
+        ? { status: 'maintenance' }
+        : camera.status === 'maintenance'
+          ? { status: 'OFFLINE' }
+          : {}),
     });
   };
 
@@ -240,6 +255,12 @@ const CameraSettingsDrawer = ({ camera, open, onClose, onSave, onDelete, saving 
                 />
                 <p className="text-xs text-fg-subtle">Connect to switch the stream profile. Saving reconnects to the camera only when the address, login or profile changed.</p>
               </>
+            ) : isDemo ? (
+              <p className="text-sm text-fg-muted">
+                {form.cameraType === 'demo_feed'
+                  ? `Plays demo_videos/${camera.demo?.clip || '?'}.mp4 on an endless loop.`
+                  : 'Streams from a browser: open the live view and choose Start to broadcast this device’s camera.'}
+              </p>
             ) : (
               <>
                 <Field label="IP address" required={ipRequired} optional={!ipRequired}>
@@ -250,6 +271,26 @@ const CameraSettingsDrawer = ({ camera, open, onClose, onSave, onDelete, saving 
                 </Field>
               </>
             )}
+          </Section>
+
+          <Section title="Status">
+            <Switch
+              label="Camera live"
+              description={
+                isCameraPaused(camera.status)
+                  ? `Paused: no live view and no fire detection. ${pausedLabel(camera)}. Turn on to go live now.`
+                  : 'Turn off to pause the live view, stream checks and fire detection until you turn it back on. Applies immediately.'
+              }
+              checked={!isCameraPaused(camera.status)}
+              disabled={pauseBusy || camera.status === 'maintenance'}
+              onChange={(value) => (value ? resume() : pause(null))}
+            />
+            <Switch
+              label="Under maintenance"
+              description="Shows the camera as under maintenance and stops its live view. When off, the camera is online whenever its stream is reachable."
+              checked={form.maintenance}
+              onChange={(value) => setForm((prev) => ({ ...prev, maintenance: value }))}
+            />
           </Section>
 
           <Section title="Detection">
@@ -292,7 +333,7 @@ const CameraSettingsDrawer = ({ camera, open, onClose, onSave, onDelete, saving 
         </Section>
 
         <section className="rounded-lg border border-critical-line p-4">
-          <h3 className="text-sm font-semibold text-critical-fg">Delete camera</h3>
+          <h3 className="text-sm font-medium text-critical-fg">Delete camera</h3>
           <p className="mt-1 text-sm text-fg-muted">Stops monitoring and removes operator access. You can restore it later.</p>
           <Button variant="danger" size="sm" icon={Trash2} loading={deleting} onClick={handleDelete} className="mt-3">
             Delete camera

@@ -17,7 +17,13 @@ const generateRefreshToken = (id) => {
 
 // Short-lived token that only authorizes the MJPEG proxy for one camera (used in <img src>).
 // A separate secret ensures it can never be accepted as an access token.
-const streamSecret = () => `${process.env.JWT_SECRET}:camera-stream`;
+// Without a JWT_SECRET these would collapse to the public string "undefined:...", so refuse instead.
+const requireJwtSecret = () => {
+  if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET is not configured');
+  return process.env.JWT_SECRET;
+};
+
+const streamSecret = () => `${requireJwtSecret()}:camera-stream`;
 
 const generateStreamToken = (userId, cameraId) => {
   return jwt.sign({ sub: String(userId), cam: String(cameraId) }, streamSecret(), {
@@ -27,9 +33,20 @@ const generateStreamToken = (userId, cameraId) => {
 
 const verifyStreamToken = (token) => jwt.verify(token, streamSecret());
 
+// Lets the browser publish its camera to MediaMTX for one webcam camera (checked in the MediaMTX
+// auth hook). MediaMTX checks it only when a session starts, so it can be short-lived.
+const publishSecret = () => `${requireJwtSecret()}:camera-publish`;
+
+const generatePublishToken = (userId, cameraId) =>
+  jwt.sign({ sub: String(userId), cam: String(cameraId) }, publishSecret(), { expiresIn: 300 });
+
+const verifyPublishToken = (token) => jwt.verify(token, publishSecret());
+
 module.exports = {
   generateToken,
   generateRefreshToken,
   generateStreamToken,
   verifyStreamToken,
+  generatePublishToken,
+  verifyPublishToken,
 };

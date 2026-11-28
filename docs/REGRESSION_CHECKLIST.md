@@ -98,3 +98,23 @@ Executed 2026-10-17 against `http://localhost:5000` with disposable accounts (re
 ## Build
 - [x] `npm run build` (frontend) succeeds — verified 2026-10-17 (Phase 13.6)
 - [x] Backend starts without module load errors — verified 2026-10-16 (Phase 13.1 module load)
+
+## Iteration 14 — Explainable alerts
+
+- [x] Detector boxes carry `scores` for every class; payload is JSON serializable — unit 2026-10-19
+- [x] Alert from ingest stores `explanation.decision` (frames, thresholds, severity basis) and `reasons` — API 2026-10-19
+- [x] Severity bands unchanged (80 / 60 / 40) — unit 2026-10-19
+- [x] `PUT /api/alerts/:id/false-alarm` with `cause` stores `falseAlarmCause`; unknown cause → 400; no cause still works — API 2026-10-19
+- [x] Explainer endpoints return 401 without the service key and for user JWTs — API 2026-10-19
+- [x] Claim hands each job out once; stale claims (> 5 min) are re-queued — API 2026-10-19
+- [x] Heatmap submit accepts JPEG only, stores under `/uploads/explanations/<org>/`, emits `alert:explained` to org admin and assigned operator only — API + socket 2026-10-19
+- [x] Training export contains closed alerts only and no organization id — API 2026-10-19
+- [x] LayerCAM focus > 0.6 on the demo fire frame; deterministic; pt/onnx parity < 1e-3 — unit 2026-10-19
+- [x] End-to-end: real frame → ingest → explainer → heatmap ready — scratch run 2026-10-19
+- [x] Insights are tenant scoped (other org sees 0 alerts and no location map, also with `?cameraId=`); platform label counts only for super admins — API 2026-10-19
+- [x] Model status endpoint requires the service key; insights show `active` after a report — API 2026-10-19
+- [x] Notification message carries the look-alike / confirmation reason — API 2026-10-19
+- [x] Demo seed refuses production; `--remove` deletes only seeded alerts — script 2026-10-19
+- [x] Explainer trains on schedule, reloads, reports status; label gate keeps "learning" — unit + end-to-end 2026-10-19
+- [ ] Alert drawer: Why this alert, Model focus toggle, low-focus warning, false-alarm cause dialog, false-alarm likelihood — browser
+- [ ] Reports → Explainable AI: model card, causes, model focus, location map (camera select, view toggle, hover), camera table; super admin dashboard model card — browser

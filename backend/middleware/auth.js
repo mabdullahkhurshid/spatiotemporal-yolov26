@@ -7,7 +7,6 @@ const {
   isSubscriptionTermActive,
   isExpiredDeprovisionEligible,
 } = require('../utils/subscriptionTerm');
-const AuditLog = require('../models/AuditLog');
 
 // Protect routes - verify JWT token
 exports.protect = async (req, res, next) => {
@@ -246,7 +245,8 @@ exports.authorize = (...roles) => {
 // Check if user belongs to organization
 exports.checkOrganizationAccess = async (req, res, next) => {
   try {
-    const { organizationId } = req.params;
+    // Routes name the parameter :organizationId or :id (e.g. /api/organizations/:id)
+    const organizationId = req.params.organizationId || req.params.id;
     const user = req.user;
 
     // Super admin has access to all organizations
@@ -278,35 +278,4 @@ exports.checkOrganizationAccess = async (req, res, next) => {
       error: error.message,
     });
   }
-};
-
-// Audit logging middleware
-exports.auditLog = async (req, res, next) => {
-  const originalSend = res.json;
-
-  res.json = function (data) {
-    // Log after response is sent
-    if (req.user && req.statusCode !== 401 && req.statusCode !== 403) {
-      const auditData = {
-        userId: req.user._id,
-        organizationId: req.user.organizationId,
-        action: req.method.toLowerCase() + '_' + req.route?.path?.replace(/\/:id/g, '') || 'unknown',
-        resource: req.route?.path?.split('/')[1] || 'unknown',
-        resourceId: req.params.id,
-        details: {
-          method: req.method,
-          path: req.path,
-          query: req.query,
-        },
-        ipAddress: req.ip || req.connection.remoteAddress,
-        userAgent: req.get('user-agent'),
-      };
-
-      AuditLog.create(auditData).catch((err) => console.error('Audit log error:', err));
-    }
-
-    return originalSend.call(this, data);
-  };
-
-  next();
 };

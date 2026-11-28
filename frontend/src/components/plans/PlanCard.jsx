@@ -29,7 +29,7 @@ const PlanCard = ({ plan, onSubscribe, subscribeLabel = 'Subscribe', disabled = 
       )}
     >
       <div className="flex items-start justify-between gap-3">
-        <h3 className="text-base font-semibold text-fg">{plan.name || 'Plan'}</h3>
+        <h3 className="text-base font-medium text-fg">{plan.name || 'Plan'}</h3>
         <div className="flex flex-wrap justify-end gap-1.5">
           {plan.isPopular && <Badge tone="warning">Most popular</Badge>}
           {plan.isRecommended && <Badge tone="brand">Recommended</Badge>}

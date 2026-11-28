@@ -18,9 +18,7 @@ const Logo = ({ size = 28, tone = 'default', subtitle, className }) => (
   <span className={cn('inline-flex items-center gap-2.5', className)}>
     <LogoMark size={size} />
     <span className="flex min-w-0 flex-col leading-tight">
-      <span className={cn('truncate text-[0.9375rem] font-semibold tracking-tight', tone === 'light' ? 'text-sidebar-fg' : 'text-fg')}>
-        FireGuard<span className={tone === 'light' ? 'text-brand-300' : 'text-brand-600 dark:text-brand-300'}> AI</span>
-      </span>
+      <span className={cn('truncate text-[0.9375rem] font-semibold', tone === 'light' ? 'text-sidebar-fg' : 'text-fg')}>{PRODUCT_NAME}</span>
       {subtitle && <span className={cn('truncate text-2xs', tone === 'light' ? 'text-sidebar-muted' : 'text-fg-subtle')}>{subtitle}</span>}
     </span>
   </span>

@@ -5,7 +5,7 @@ const SEGMENTS = [
   { key: 'active', label: 'Active', color: 'bg-critical' },
   { key: 'acknowledged', label: 'Acknowledged', color: 'bg-warning' },
   { key: 'resolved', label: 'Resolved', color: 'bg-success' },
-  { key: 'falseAlarms', label: 'False alarm', color: 'bg-slate-400 dark:bg-slate-500' },
+  { key: 'falseAlarms', label: 'False alarm', color: 'bg-fg-subtle/60' },
 ];
 
 /**

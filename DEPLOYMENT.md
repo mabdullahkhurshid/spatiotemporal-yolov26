@@ -102,10 +102,19 @@ sudo certbot --nginx -d your-domain.com
 
 ### Option 2: Docker Deployment
 
-1. **Build and Run**
+1. **Set the required secrets** in `.env` next to `docker-compose.yml`. Compose stops with a clear
+   message if one is missing, and the backend refuses to start with placeholder or short values:
+   `JWT_SECRET`, `JWT_REFRESH_SECRET`, `INFERENCE_SERVICE_API_KEY`, `MEDIAMTX_INTERNAL_PASS`
+   (each 32+ random characters, the two JWT secrets different). Generate one with:
+```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+```
+
+2. **Build and Run**
 ```bash
 docker-compose up -d
 ```
+   MongoDB is published on `127.0.0.1:27017` only (this machine). The backend has a healthcheck on `/health`.
 
 2. **View Logs**
 ```bash
@@ -134,6 +143,43 @@ Ensure these are set in production:
 - `GOOGLE_CLIENT_SECRET` - Google OAuth secret
 - `FRONTEND_URL` - Production frontend URL
 - `SOCKET_CORS_ORIGIN` - Production frontend URL
+- `INFERENCE_SERVICE_API_KEY` - Strong random secret shared with the inference and explainer services
+- `MEDIAMTX_INTERNAL_PASS` - Strong random secret (when demo cameras are enabled)
+- `TRUST_PROXY=1` - Only when nginx (or one load balancer) is in front. Without it every user shares
+  nginx's IP and a few failed logins anywhere lock everyone out; set it without a proxy and clients
+  can spoof their IP.
+- `CAMERA_CREDENTIALS_KEY` - Optional but recommended: set it before you ever change `JWT_SECRET`, so
+  stored ONVIF camera passwords stay readable. Never change it once set.
+
+### Rotating a placeholder JWT_SECRET
+
+If a server has been running on the example `JWT_SECRET`, the backend now refuses to start in production.
+Before replacing it:
+1. Set `CAMERA_CREDENTIALS_KEY` to a new random value and restart once. Passwords saved earlier are still
+   read with the old key; new and edited cameras use the new key.
+2. Re-enter the password of each ONVIF camera (camera settings) so it is stored with the new key.
+   Saving with a blank password keeps the old encrypted value.
+3. Change `JWT_SECRET` and `JWT_REFRESH_SECRET`. Everyone is signed out and signs in again.
+
+## Network exposure
+
+- `/api/internal/*` is for the inference, explainer and MediaMTX services only. `nginx.conf` answers it
+  with 404; those services call the backend directly on the private network.
+- Alert snapshots and heatmaps under `/uploads` require sign-in (same access rules as the alert).
+
+## Enabling MongoDB authentication (recommended)
+
+`MONGO_INITDB_ROOT_USERNAME`/`PASSWORD` only take effect on an **empty** data volume, so an existing
+deployment must create its user by hand:
+```bash
+docker compose exec mongodb mongosh fire-detection-system --eval \
+  'db.createUser({user: "fireapp", pwd: "<strong password>", roles: [{role: "readWrite", db: "fire-detection-system"}]})'
+```
+Then set, in `.env`:
+```
+MONGODB_URI_DOCKER=mongodb://fireapp:<strong password>@mongodb:27017/fire-detection-system?authSource=fire-detection-system
+```
+and add `command: ["--auth"]` to the `mongodb` service. Restart with `docker compose up -d`.
 
 ## Security Checklist
 

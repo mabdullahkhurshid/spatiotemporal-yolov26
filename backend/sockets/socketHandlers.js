@@ -3,9 +3,11 @@ const Camera = require('../models/Camera');
 const User = require('../models/User');
 const OperatorCameraAssignment = require('../models/OperatorCameraAssignment');
 const { emitToCameraAudience, SUPER_ADMIN_ROOM } = require('./emitters');
+const { attachPreviewHub, watch: watchPreview, previewRoom } = require('../services/livePreviewHub');
 
 const HEARTBEAT_TIMEOUT_MS = parseInt(process.env.CAMERA_HEARTBEAT_TIMEOUT_MS) || 5 * 60 * 1000; // 5 minutes
 const OFFLINE_CHECK_INTERVAL_MS = parseInt(process.env.CAMERA_OFFLINE_CHECK_INTERVAL_MS) || 60 * 1000; // 1 min
+const SOCKET_USER_RECHECK_MS = parseInt(process.env.SOCKET_USER_RECHECK_MS) || 60 * 1000; // 1 min
 
 // Mark cameras OFFLINE if no heartbeat within timeout
 const checkOfflineCameras = async (io) => {
@@ -57,6 +59,22 @@ const loadSocketUser = async (userId) => {
     role: user.role,
     organizationId: user.organizationId ? String(user.organizationId) : null,
   };
+};
+
+// Disconnect sockets whose user was deleted or deactivated (safety net for disconnectUserSockets).
+const disconnectInactiveUsers = async (io) => {
+  try {
+    const sockets = await io.fetchSockets();
+    const userIds = [...new Set(sockets.map((s) => s.data.user?.id).filter(Boolean))];
+    if (userIds.length === 0) return;
+    const active = await User.find({ _id: { $in: userIds }, isDeleted: { $ne: true }, isActive: true }).distinct('_id');
+    const activeIds = new Set(active.map(String));
+    for (const s of sockets) {
+      if (!activeIds.has(s.data.user?.id)) s.disconnect(true);
+    }
+  } catch (error) {
+    console.error('Socket user re-check error:', error);
+  }
 };
 
 // Require a valid access token (handshake auth or cookie) before a socket can connect.
@@ -158,9 +176,12 @@ const handleSocketConnection = (io) => {
         if (!cameraId) return;
         const camera = await Camera.findById(cameraId);
 
+        // Only online/offline can be set here; paused/maintenance go through the REST endpoints.
+        const nextStatus = status === 'online' ? 'ONLINE' : status === 'offline' ? 'OFFLINE' : null;
+        if (!nextStatus) return;
         if (camera && !camera.isDeleted && user.role !== 'operator' && (await canTouchCamera(user, camera))) {
           const now = new Date();
-          camera.status = status === 'online' ? 'ONLINE' : status === 'offline' ? 'OFFLINE' : status;
+          camera.status = nextStatus;
           camera.lastActivity = now;
           camera.lastHeartbeat = now;
           await camera.save();
@@ -191,7 +212,7 @@ const handleSocketConnection = (io) => {
 
         if (camera && !camera.isDeleted && (await canTouchCamera(user, camera))) {
           const now = new Date();
-          camera.status = 'ONLINE';
+          if (!Camera.HELD_STATUSES.includes(camera.status)) camera.status = 'ONLINE';
           camera.lastActivity = now;
           camera.lastHeartbeat = now;
           await camera.save();
@@ -202,7 +223,7 @@ const handleSocketConnection = (io) => {
             'camera:status:update',
             {
               cameraId,
-              status: 'ONLINE',
+              status: camera.status,
               lastHeartbeat: now,
               lastActivity: now,
             }
@@ -213,13 +234,35 @@ const handleSocketConnection = (io) => {
       }
     });
 
+    // Live tile previews (services/livePreviewHub.js), for anyone who may view the camera.
+    socket.on('camera:preview:subscribe', async (cameraId) => {
+      try {
+        const id = normalizeId(cameraId);
+        if (!/^[a-f0-9]{24}$/.test(id)) return;
+        const camera = await Camera.findById(id).select('organizationId isDeleted');
+        if (!camera || camera.isDeleted || !(await canTouchCamera(user, camera))) return;
+        socket.join(previewRoom(id));
+        watchPreview(io, socket, id);
+      } catch (error) {
+        console.error('Socket camera preview error:', error);
+      }
+    });
+
+    socket.on('camera:preview:unsubscribe', (cameraId) => {
+      socket.leave(previewRoom(normalizeId(cameraId)));
+    });
+
     socket.on('disconnect', () => {
       console.log('User disconnected:', socket.id);
     });
   });
 
+  attachPreviewHub(io);
+
   // Periodic check: mark cameras OFFLINE if no heartbeat
   setInterval(() => checkOfflineCameras(io), OFFLINE_CHECK_INTERVAL_MS);
+  // Periodic check: drop sockets of users deleted or deactivated since they connected
+  setInterval(() => disconnectInactiveUsers(io), SOCKET_USER_RECHECK_MS).unref();
 };
 
 module.exports = handleSocketConnection;

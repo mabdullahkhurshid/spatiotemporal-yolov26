@@ -1,5 +1,8 @@
 const mongoose = require('mongoose');
 
+// Statuses an admin sets by hand: stream checks, heartbeats and detections never overwrite them.
+const HELD_STATUSES = ['maintenance', 'paused'];
+
 const cameraSchema = new mongoose.Schema(
   {
     name: {
@@ -21,7 +24,7 @@ const cameraSchema = new mongoose.Schema(
     },
     cameraType: {
       type: String,
-      enum: ['ip_rtsp', 'http_mjpeg', 'onvif'],
+      enum: ['ip_rtsp', 'http_mjpeg', 'onvif', 'demo_feed', 'webcam'],
       default: 'ip_rtsp',
     },
     displayNumber: {
@@ -44,8 +47,13 @@ const cameraSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['ONLINE', 'OFFLINE', 'online', 'offline', 'maintenance'],
+      enum: ['ONLINE', 'OFFLINE', 'online', 'offline', 'maintenance', 'paused'],
       default: 'OFFLINE',
+    },
+    // Set while status is 'paused': when the camera goes live again by itself (null = until resumed).
+    pausedUntil: {
+      type: Date,
+      default: null,
     },
     lastHeartbeat: {
       type: Date,
@@ -93,6 +101,10 @@ const cameraSchema = new mongoose.Schema(
         hardwareId: { type: String },
       },
       lastSyncedAt: { type: Date },
+    },
+    // Demo cameras (utils/demoSource): demo_feed loops demo_videos/<clip>.mp4; webcam needs no fields.
+    demo: {
+      clip: { type: String, trim: true },
     },
     settings: {
       detectionEnabled: { type: Boolean, default: true },
@@ -155,8 +167,12 @@ cameraSchema.methods.updateActivity = function () {
   const now = new Date();
   this.lastActivity = now;
   this.lastHeartbeat = now;
-  this.status = 'ONLINE';
+  // Maintenance and pause are set by an admin and only cleared by an admin (or the pause timer).
+  if (!HELD_STATUSES.includes(this.status)) this.status = 'ONLINE';
   return this.save();
 };
 
-module.exports = mongoose.model('Camera', cameraSchema);
+const Camera = mongoose.model('Camera', cameraSchema);
+Camera.HELD_STATUSES = HELD_STATUSES;
+
+module.exports = Camera;

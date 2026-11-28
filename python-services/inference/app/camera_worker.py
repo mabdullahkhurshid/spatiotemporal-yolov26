@@ -70,6 +70,10 @@ class CameraWorker:
                 detections = self.detector.predict(frame)
                 det_dicts = [d.to_dict() for d in detections]
                 metrics = self.tracker.update(det_dicts)
+                if "evidence" in metrics:
+                    # Detector-side rule values the tracker does not own.
+                    metrics["evidence"]["confThreshold"] = round(settings.conf_threshold * 100, 2)
+                    metrics["evidence"]["frameIntervalMs"] = settings.frame_interval_ms
                 body = {
                     "cameraId": self.camera_id,
                     "streamStatus": "ok",

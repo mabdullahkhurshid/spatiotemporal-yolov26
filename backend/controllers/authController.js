@@ -10,6 +10,7 @@ const {
   revokeAllSessions,
   clearAuthCookies,
 } = require("../utils/sessions");
+const { disconnectUserSockets } = require("../sockets/emitters");
 const { generateOTP, generateToken, hashToken } = require("../utils/generateOTP");
 const {
   sendVerificationEmail,
@@ -255,14 +256,6 @@ exports.login = async (req, res, next) => {
       });
     }
 
-    // Check if account is active
-    if (!user.isActive) {
-      return res.status(403).json({
-        success: false,
-        message: "Your account is suspended. Please contact support.",
-      });
-    }
-
     // Google-only accounts have no local password until the user sets one
     if (!user.password) {
       if (user.googleId) {
@@ -286,6 +279,14 @@ exports.login = async (req, res, next) => {
       return res.status(401).json({
         success: false,
         message: "Invalid credentials",
+      });
+    }
+
+    // Checked only after the password, so a wrong password never reveals that an account is suspended
+    if (!user.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: "Your account is suspended. Please contact support.",
       });
     }
 
@@ -477,6 +478,7 @@ exports.logout = async (req, res, next) => {
 exports.logoutAll = async (req, res, next) => {
   try {
     await revokeAllSessions(req.user._id);
+    disconnectUserSockets(req.io, req.user._id);
     clearAuthCookies(res);
 
     await AuditLog.create({
@@ -630,6 +632,7 @@ exports.resetPassword = async (req, res, next) => {
 
     // A reset means the old password may be compromised: end every existing session.
     await revokeAllSessions(user._id);
+    disconnectUserSockets(req.io, user._id);
 
     // Audit log
     await AuditLog.create({

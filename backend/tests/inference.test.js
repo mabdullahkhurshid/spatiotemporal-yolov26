@@ -72,6 +72,75 @@ test('ingest with createAlert creates incident, alert, snapshot and notification
   assert.equal(incident.status, 'ended');
 });
 
+test('alert from ingest stores the decision trace, class scores and incident duration', async () => {
+  const startedAt = Date.now() - 4000;
+  const res = await fx.ingest(
+    frame({
+      detections: [{ className: 'fire', confidence: 86, x: 0.1, y: 0.1, w: 0.2, h: 0.25, scores: { fire: 86, other: 40, smoke: 3 } }],
+      metrics: {
+        incidentActive: true,
+        createAlert: true,
+        startedAt,
+        fireConfidence: 86,
+        smokeConfidence: 0,
+        averageConfidence: 86,
+        estimatedSpreadRate: 0.002,
+        evidence: {
+          rule: 'consecutive_frames',
+          alertClasses: ['fire', 'smoke'],
+          confThreshold: 35,
+          minConsecutive: 3,
+          frameIntervalMs: 500,
+          consecutiveFrames: 3,
+          streakMeanConfidence: 84,
+          frames: [
+            { t: startedAt, fire: 82, smoke: 0, area: 0.05 },
+            { t: startedAt + 500, fire: 84, smoke: 0, area: 0.05 },
+            { t: startedAt + 1000, fire: 86, smoke: 0, area: 0.05 },
+          ],
+        },
+      },
+      snapshotBase64: Buffer.from([0xff, 0xd8, 0xff, 0xd9]).toString('base64'),
+    })
+  );
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  const alert = await server.db.collection('alerts').findOne({ _id: new Types.ObjectId(res.body.data.alertId) });
+
+  assert.equal(alert.intensityLevel, 'critical');
+  assert.equal(alert.boundingBoxes[0].scores.other, 40);
+  assert.equal(alert.explanation.decision.frames.length, 3);
+  assert.equal(alert.explanation.decision.streakMeanConfidence, 84);
+  assert.equal(alert.explanation.decision.severity.level, 'critical');
+  const codes = alert.explanation.reasons.map((r) => r.code);
+  for (const code of ['detected', 'confirmed', 'severity', 'coverage', 'spread', 'lookalike']) {
+    assert.ok(codes.includes(code), `missing reason ${code}: ${codes.join(',')}`);
+  }
+  assert.equal(typeof alert.metricsSnapshot.incidentDurationSec, 'number');
+  // XAI_ENABLED is not set for this server, so no heatmap job is queued.
+  assert.equal(alert.explanation.visual?.status, undefined);
+});
+
+test('false alarm records an optional cause and rejects unknown causes', async () => {
+  const create = async () => {
+    const res = await fx.ingest(
+      frame({ metrics: { incidentActive: true, createAlert: true, smokeConfidence: 70, fireConfidence: 0, averageConfidence: 70 } })
+    );
+    return res.body.data.alertId;
+  };
+  const first = await create();
+  const bad = await fx.api('PUT', `/api/alerts/${first}/false-alarm`, { token: org.token, body: { cause: 'ALIENS' } });
+  assert.equal(bad.status, 400);
+  const ok = await fx.api('PUT', `/api/alerts/${first}/false-alarm`, { token: org.token, body: { cause: 'STEAM_FOG_DUST', note: 'kettle' } });
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  assert.equal(ok.body.data.falseAlarmCause, 'STEAM_FOG_DUST');
+  assert.equal(ok.body.data.status, 'false_alarm');
+
+  const second = await create();
+  const noCause = await fx.api('PUT', `/api/alerts/${second}/false-alarm`, { token: org.token, body: {} });
+  assert.equal(noCause.status, 200);
+  assert.equal(noCause.body.data.falseAlarmCause, undefined);
+});
+
 test('ingest for an unknown camera returns 404', async () => {
   const res = await fx.ingest(frame({ cameraId: new Types.ObjectId().toString() }));
   assert.equal(res.status, 404);

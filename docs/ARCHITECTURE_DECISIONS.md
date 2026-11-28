@@ -122,3 +122,21 @@
 - Saving an ONVIF camera requires the device to be reachable; unrelated edits (name, notes) do not contact the device. `POST /api/cameras/:id/onvif/refresh` re-reads the stream address.
 - Rotating the credentials key requires re-entering ONVIF passwords.
 - No PTZ, events or snapshot URI yet.
+
+## ADR-009: Explainable alerts — decision trace, LayerCAM, SHAP (2026-10-19)
+
+**Context:** Alerts showed confidences and a snapshot but not why they fired. The model only proposes boxes; a deterministic rule (`IncidentTracker`: fire/smoke ≥ confidence threshold in N consecutive frames, cooldown) raises the alert and the backend picks severity from the alert frame's peak confidence.
+
+**Decision:**
+- **Decision trace (exact):** the worker sends the rule values and confirming frames (`metrics.evidence`); `backend/services/alertExplanation.js` stores `alert.explanation.decision` and plain-language `reasons`. Each box keeps all class scores so a high `other` score can be flagged as a possible look-alike.
+- **Visual explanation: LayerCAM (Grad-CAM family)** on `best.pt` — same weights as `best.onnx`, checked at explainer start-up. Target: class score summed over anchors with IoU > 0.5 to the alert box; activations: first block of the Detect classification branch per scale. Vanilla Grad-CAM was rejected after measuring 12–17% of attention inside the box (89–100% with LayerCAM).
+- **Separate explainer process/container** (`python -m app.xai.main`, `requirements-xai.txt`, `Dockerfile.explainer`). It pulls jobs over the API-key internal API; alerts are emitted before their heatmap exists (`alert:explained` follows). The live detector's dependencies are unchanged.
+- **False-alarm likelihood:** one global `GradientBoostingClassifier` on numeric features only (no images, no organization identifiers), explained with SHAP `TreeExplainer` in probability units. Labels come from operator outcomes and the new `falseAlarmCause`. Training refuses to write a model below 150 labelled alerts, 30 per class or CV ROC-AUC 0.6.
+- **LIME rejected:** ~300 perturbed CPU passes per alert (~2.4 min), stochastic output, out-of-distribution masking of diffuse smoke.
+
+**Consequences:**
+- The false-alarm likelihood is advisory: it never suppresses an alert or changes severity.
+- `averageConfidence` keeps its meaning (peak of the alert frame); the true mean over the confirming frames is `explanation.decision.streakMeanConfidence`.
+- Heatmaps are served from `/uploads/explanations/` like snapshots (static, unauthenticated, random filename). Authenticating `/uploads` is still open.
+- With `XAI_ENABLED=true` and no explainer running, alerts stay `pending`; the UI hides the heatmap state after 3 minutes.
+- The explainer retrains daily (`XAI_RETRAIN_HOURS`) and keeps the previous model when a new one fails the quality gate. Org admins see label progress as a percentage; platform-wide counts are for super admins only.

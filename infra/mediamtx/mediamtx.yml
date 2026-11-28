@@ -1,0 +1,30 @@
+# MediaMTX stream server for demo cameras (see backend/utils/demoSource.js).
+#   demo/<clip>       looping demo videos, published by the fakecam container
+#   webcam/<cameraId> browser cameras, published over WebRTC (WHIP) from the org-admin live view
+logLevel: info
+
+# Every publish/read is checked by the backend: internal services use MEDIAMTX_INTERNAL_USER/PASS,
+# browsers may only publish to webcam/<id> with a short-lived token.
+# Running the backend on the host (npm run dev) instead of in compose? Use
+# http://host.docker.internal:5000/api/internal/mediamtx/auth here.
+authMethod: http
+authHTTPAddress: http://backend:5000/api/internal/mediamtx/auth
+
+rtsp: yes
+rtspAddress: :8554
+
+webrtc: yes
+webrtcAddress: :8889
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
+# Address the browser can reach for WebRTC media. Docker hides the container IP, so list the host:
+# 127.0.0.1 for a browser on the same machine; add the LAN IP to broadcast from another device.
+webrtcAdditionalHosts: [127.0.0.1]
+
+rtmp: no
+hls: no
+srt: no
+
+paths:
+  "~^demo/[A-Za-z0-9_-]+$": {}
+  "~^webcam/[a-f0-9]{24}$": {}

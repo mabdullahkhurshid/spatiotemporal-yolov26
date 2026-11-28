@@ -116,6 +116,10 @@ const sendPasswordResetEmail = async (user, resetToken) => {
 
 // Send alert notification email
 const sendAlertEmail = async (user, alert, camera) => {
+  const reasons = alert.explanation?.reasons || [];
+  const why = reasons.length
+    ? `<h3 style="color: #991b1b;">Why this alert</h3><ul>${reasons.map((r) => `<li>${escapeHtml(r.text)}</li>`).join('')}</ul>`
+    : '';
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <h2 style="color: #dc2626;">🚨 Fire Alert Detected</h2>
@@ -128,6 +132,7 @@ const sendAlertEmail = async (user, alert, camera) => {
         <p><strong>Intensity:</strong> ${alert.intensityLevel.toUpperCase()}</p>
         <p><strong>Time:</strong> ${new Date(alert.timestamp).toLocaleString()}</p>
       </div>
+      ${why}
       <p style="color: #dc2626; font-weight: bold;">Please take immediate action!</p>
       <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
       <p style="color: #6b7280; font-size: 12px;">Fire Detection System</p>
